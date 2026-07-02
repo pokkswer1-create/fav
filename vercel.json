@@ -1,0 +1,24 @@
+{
+  "crons": [
+    {
+      "path": "/api/batch/monthly-makeup-tickets",
+      "schedule": "0 0 1 * *"
+    },
+    {
+      "path": "/api/batch/daily-payment-reminders",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/batch/kva-notices",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/batch/instagram-scheduled-publish",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/batch/web-push-attendance",
+      "schedule": "* * * * *"
+    }
+  ]
+}
