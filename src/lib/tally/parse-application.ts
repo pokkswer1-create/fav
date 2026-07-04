@@ -30,6 +30,9 @@ export type ParsedTallyApplication = {
   selectedClasses: string[];
   trialClass: string | null;
   trialDate: string | null;
+  trialDayOfWeek: string | null;
+  trialClassSlot: string | null;
+  signatureUrl: string | null;
   depositConfirmed: boolean;
   applicationPath: string | null;
   paymentMethod: string | null;
@@ -72,6 +75,16 @@ function fieldValueToStrings(field: TallyField): string[] {
         return [String(item)];
       });
     }
+  }
+
+  if (type === "SIGNATURE" && Array.isArray(value)) {
+    for (const item of value) {
+      if (item && typeof item === "object" && "url" in item) {
+        const url = String((item as { url?: string }).url ?? "").trim();
+        if (url) return [url];
+      }
+    }
+    return [];
   }
 
   if (Array.isArray(value)) {
@@ -170,7 +183,18 @@ export function parseTallyApplication(payload: TallyWebhookPayload): ParsedTally
   const trialClass =
     read(["체험 클래스", "trial class"]) ??
     (formMode === "trial" ? read(["클래스 선택"]) : null);
-  const trialDate = read(["체험 날짜", "trial date"]);
+  const trialDate = read(["체험 희망 날짜", "체험 날짜", "trial date"]);
+  const trialDayOfWeek = read(["체험 희망 요일", "trial day"]);
+  const trialClassSlot = read(["체험 희망 반", "trial class slot"]);
+  const signatureUrl = (() => {
+    for (const field of fields) {
+      if (field.type === "SIGNATURE") {
+        const url = firstString(fieldValueToStrings(field));
+        if (url) return url;
+      }
+    }
+    return read(["서명", "signature"]);
+  })();
   const applicationPath = read(["신청 경로", "application path"]);
   const paymentMethod = read(["결제방법", "결제 방법", "payment"]);
   const selectedClasses =
@@ -185,7 +209,7 @@ export function parseTallyApplication(payload: TallyWebhookPayload): ParsedTally
 
   const programType =
     formMode === "trial"
-      ? trialClass ?? ageGroup ?? "체험수업"
+      ? trialClassSlot ?? trialClass ?? ageGroup ?? "체험수업"
       : selectedClasses[0] ?? ageGroup ?? "정규수업";
 
   return {
@@ -202,6 +226,9 @@ export function parseTallyApplication(payload: TallyWebhookPayload): ParsedTally
     selectedClasses,
     trialClass,
     trialDate,
+    trialDayOfWeek,
+    trialClassSlot,
+    signatureUrl,
     depositConfirmed,
     applicationPath,
     paymentMethod,
@@ -223,6 +250,9 @@ export function buildApplicationNotes(parsed: ParsedTallyApplication) {
     parsed.gradeInfo ? `[gradeInfo] ${parsed.gradeInfo}` : null,
     parsed.trialClass ? `[trialClass] ${parsed.trialClass}` : null,
     parsed.trialDate ? `[trialDate] ${parsed.trialDate}` : null,
+    parsed.trialDayOfWeek ? `[trialDayOfWeek] ${parsed.trialDayOfWeek}` : null,
+    parsed.trialClassSlot ? `[trialClassSlot] ${parsed.trialClassSlot}` : null,
+    parsed.signatureUrl ? `[signatureUrl] ${parsed.signatureUrl}` : null,
     parsed.depositConfirmed ? `[depositConfirmed] true` : `[depositConfirmed] false`,
     parsed.applicationPath ? `[applicationPath] ${parsed.applicationPath}` : null,
     parsed.paymentMethod ? `[paymentMethod] ${parsed.paymentMethod}` : null,

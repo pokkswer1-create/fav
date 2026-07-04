@@ -60,6 +60,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "환불/보강 규정 동의가 필요합니다." }, { status: 400 });
   }
 
+  if (parsed.formMode === "trial" && (!parsed.trialDate || !parsed.trialDayOfWeek || !parsed.trialClassSlot)) {
+    return NextResponse.json(
+      { error: "체험수업 필수 항목(날짜, 요일, 반)이 누락되었습니다." },
+      { status: 400 }
+    );
+  }
+
+  if (!parsed.signatureUrl) {
+    return NextResponse.json({ error: "서명이 필요합니다." }, { status: 400 });
+  }
+
   const supabase = getSupabaseServer();
 
   if (parsed.formMode === "trial") {

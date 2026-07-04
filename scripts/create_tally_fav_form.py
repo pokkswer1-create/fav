@@ -240,6 +240,34 @@ class Builder:
         self.blocks.append(title)
         self.blocks.extend(option_blocks)
 
+    def signature(self, label: str, *, required: bool = False, section: str | None = None) -> None:
+        title = {
+            "uuid": uid(),
+            "type": "TITLE",
+            "groupUuid": uid(),
+            "groupType": "QUESTION",
+            "payload": {"html": label},
+        }
+        field = {
+            "uuid": uid(),
+            "type": "SIGNATURE",
+            "groupUuid": uid(),
+            "groupType": "SIGNATURE",
+            "payload": {
+                "isRequired": required,
+                "label": "아래에 서명해 주세요",
+                "isHidden": section is not None,
+            },
+        }
+        tracked = [title, field]
+        if section == "trial":
+            for block in tracked:
+                self._track_trial(block)
+        elif section == "regular":
+            for block in tracked:
+                self._track_regular(block)
+        self.blocks.extend(tracked)
+
     def conditional_logic(self) -> None:
         if not self.lesson_type_group or not self.trial_option_uuid or not self.regular_option_uuid:
             return
@@ -313,6 +341,8 @@ TRIAL_CLASSES = [
     "⏰ 90분 클래스 40,000 원",
     "👨‍🎓 성인 클래스  40,000 원",
 ]
+
+WEEKDAYS = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"]
 
 REGULAR_CLASSES = [
     "50분 수업 유아반 (6세-10세) |평일 월 1부 16시 40분 타임",
@@ -393,8 +423,9 @@ def build_form() -> Builder:
 
     b.page_break()
     b.text("<b>✨ 체험수업 신청</b>", section="trial")
-    b.multiple_choice("🏐 체험 클래스 선택", TRIAL_CLASSES, required=True, section="trial")
-    b.input_date("📆 체험 날짜", required=True, section="trial")
+    b.input_date("📆 체험 희망 날짜", required=True, section="trial")
+    b.multiple_choice("📅 체험 희망 요일", WEEKDAYS, required=True, section="trial")
+    b.multiple_choice("🏐 체험 희망 반", REGULAR_CLASSES, required=True, section="trial")
     b.text(
         "체험 수업 후 당일 정규레슨반 등록 시, 등록비에서 체험 수업 비용을 제외하고 결제 진행을 도와드립니다.",
         section="trial",
@@ -405,6 +436,7 @@ def build_form() -> Builder:
         section="trial",
     )
     b.checkboxes("✅ 개인정보 수집·이용 동의", ["동의합니다."], required=True, section="trial")
+    b.signature("✍️ 서명", required=True, section="trial")
 
     b.page_break()
     b.text("<b>📚 정규수업 신청</b><br>아래에서 원하시는 클래스를 모두 선택해 주세요.", section="regular")
@@ -420,6 +452,7 @@ def build_form() -> Builder:
     b.checkboxes("📝 환불 규정 동의", ["동의합니다."], required=True, section="regular")
     b.text(MAKEUP_HTML, section="regular")
     b.checkboxes("🔄 보강 규정 동의", ["동의합니다."], required=True, section="regular")
+    b.signature("✍️ 서명", required=True, section="regular")
 
     b.conditional_logic()
     return b
@@ -459,31 +492,52 @@ def main() -> int:
         "blocks": builder.blocks,
     }
 
-    print("Creating Tally form...")
-    created = tally_request("POST", "/forms", api_key, payload)
-    form_id = created["id"]
+    form_id = os.environ.get("TALLY_FORM_ID", "").strip()
+    if form_id:
+        print(f"Updating Tally form {form_id}...")
+        tally_request("PATCH", f"/forms/{form_id}", api_key, payload)
+    else:
+        print("Creating Tally form...")
+        created = tally_request("POST", "/forms", api_key, payload)
+        form_id = created["id"]
+
     public_url = f"https://tally.so/r/{form_id}"
     edit_url = f"https://tally.so/forms/{form_id}/edit"
 
-    webhook_url = os.environ.get("TALLY_WEBHOOK_URL", "").strip()
+    webhook_url = os.environ.get(
+        "TALLY_WEBHOOK_URL", "https://fav.vercel.app/api/webhooks/tally-application"
+    ).strip()
     webhook_secret = os.environ.get("TALLY_WEBHOOK_SECRET", "").strip()
-    if webhook_url:
-        print("Creating webhook...")
-        hook_payload: dict[str, Any] = {
-            "formId": form_id,
-            "url": webhook_url,
-            "eventTypes": ["FORM_RESPONSE"],
-        }
-        if webhook_secret:
-            hook_payload["signingSecret"] = webhook_secret
-        tally_request("POST", "/webhooks", api_key, hook_payload)
+    if not webhook_secret:
+        webhook_secret = "fav-tally-wh-7Kp2mN9xQ4vR8sT6wJ3hL5n"
 
-    print("\n✅ Tally form created!")
+    if webhook_url:
+        existing = tally_request("GET", "/webhooks", api_key)
+        hook_items = existing.get("webhooks", existing.get("items", []))
+        already = any(
+            item.get("formId") == form_id and item.get("url") == webhook_url
+            for item in hook_items
+        )
+        if already:
+            print("Webhook already configured.")
+        else:
+            print("Creating webhook...")
+            hook_payload: dict[str, Any] = {
+                "formId": form_id,
+                "url": webhook_url,
+                "eventTypes": ["FORM_RESPONSE"],
+                "signingSecret": webhook_secret,
+            }
+            tally_request("POST", "/webhooks", api_key, hook_payload)
+            print(f"TALLY_WEBHOOK_SECRET={webhook_secret}")
+            print("→ Vercel 환경변수에 위 시크릿을 등록하세요.")
+
+    print("\n✅ Tally form ready!")
     print(f"Public URL : {public_url}")
     print(f"Edit URL   : {edit_url}")
     print(f"Form ID    : {form_id}")
-    if not webhook_url:
-        print("\nWebhook not configured. Set TALLY_WEBHOOK_URL to auto-connect.")
+    if webhook_url:
+        print(f"Webhook    : {webhook_url}")
     return 0
 
 

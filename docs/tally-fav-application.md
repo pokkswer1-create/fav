@@ -16,10 +16,13 @@ Webhook까지 한 번에 연결:
 
 ```bash
 TALLY_API_KEY=tly-xxx \
-TALLY_WEBHOOK_URL=https://<배포-도메인>/api/webhooks/tally-application \
-TALLY_WEBHOOK_SECRET=<시크릿> \
+TALLY_FORM_ID=QKyeYX \
+TALLY_WEBHOOK_URL=https://fav.vercel.app/api/webhooks/tally-application \
+TALLY_WEBHOOK_SECRET=fav-tally-wh-7Kp2mN9xQ4vR8sT6wJ3hL5n \
 python3 scripts/create_tally_fav_form.py
 ```
+
+> `TALLY_WEBHOOK_SECRET`은 Vercel 환경변수에도 **동일하게** 등록해야 합니다.
 
 ### 방법 B — Tally UI에서 수동 생성
 
@@ -62,12 +65,14 @@ Tally: 질문 선택 → **Conditional logic** → Show blocks when...
 
 | 순서 | Tally 블록 | 라벨 | 필수 | 옵션 |
 |------|-----------|------|------|------|
-| 1 | Multiple choice | `🏐 체험 클래스 선택` | ✅ | 아래 **체험 클래스 3개** |
-| 2 | Date | `📆 체험 날짜` | ✅ | — |
-| 3 | Text | (제목 없음) | — | 체험 후 당일 정규 등록 시 등록비에서 체험비 차감 안내 |
-| 4 | Checkboxes | `💳 입금 확인` | | 입금했습니다. |
-| 5 | Text | (제목 없음) | — | 개인정보 수집·이용 동의 안내 (구글 폼과 동일) |
-| 6 | Checkboxes | `✅ 개인정보 수집·이용 동의` | ✅ | 동의합니다. |
+| 1 | Date | `📆 체험 희망 날짜` | ✅ | — |
+| 2 | Multiple choice | `📅 체험 희망 요일` | ✅ | 월~일요일 |
+| 3 | Multiple choice | `🏐 체험 희망 반` | ✅ | 정규반 시간표 목록 |
+| 4 | Text | (제목 없음) | — | 체험 후 당일 정규 등록 안내 |
+| 5 | Checkboxes | `💳 입금 확인` | | 입금했습니다. |
+| 6 | Text | (제목 없음) | — | 개인정보 수집·이용 동의 안내 |
+| 7 | Checkboxes | `✅ 개인정보 수집·이용 동의` | ✅ | 동의합니다. |
+| 8 | Signature | `✍️ 서명` | ✅ | — |
 
 ### 체험 클래스 3개 (복사용)
 
@@ -94,6 +99,7 @@ Tally: 질문 선택 → **Conditional logic** → Show blocks when...
 | 9 | Checkboxes | `📝 환불 규정 동의` | ✅ | 동의합니다. |
 | 10 | Text | (제목 없음) | — | 보강 규정 전문 |
 | 11 | Checkboxes | `🔄 보강 규정 동의` | ✅ | 동의합니다. |
+| 12 | Signature | `✍️ 서명` | ✅ | — |
 
 ---
 
