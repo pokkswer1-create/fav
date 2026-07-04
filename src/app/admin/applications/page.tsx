@@ -19,6 +19,7 @@ function getSourceLabel(notes: unknown) {
   if (!m) return "기본";
   const source = m[1].trim();
   if (source.includes("volleyballclass.com")) return "FAV";
+  if (source === "tally") return "Tally";
   return source || "기본";
 }
 
