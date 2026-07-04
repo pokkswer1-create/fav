@@ -6,6 +6,23 @@
 
 ## 진행 순서 (이 순서대로 하세요)
 
+### 방법 A — API로 자동 생성 (권장)
+
+```bash
+TALLY_API_KEY=tly-xxx python3 scripts/create_tally_fav_form.py
+```
+
+Webhook까지 한 번에 연결:
+
+```bash
+TALLY_API_KEY=tly-xxx \
+TALLY_WEBHOOK_URL=https://<배포-도메인>/api/webhooks/tally-application \
+TALLY_WEBHOOK_SECRET=<시크릿> \
+python3 scripts/create_tally_fav_form.py
+```
+
+### 방법 B — Tally UI에서 수동 생성
+
 1. **Tally에서 폼 만들기** (아래 페이지별 블록 목록)
 2. **Publish** 후 공개 URL 확인
 3. **Webhook 연결** (Vercel 배포 URL + `/api/webhooks/tally-application`)
