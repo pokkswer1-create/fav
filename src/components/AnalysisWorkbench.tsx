@@ -2,8 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { analyzeMatch, pct, scoreLabel } from "@/lib/analysis";
+import { buildTeamHeatmap } from "@/lib/heatmap";
 import { demoMatch } from "@/lib/demo-match";
 import type { MatchAnalysis, MatchInput } from "@/lib/types";
+import { CourtHeatmap } from "./CourtHeatmap";
+import { MatchSheetForm } from "./MatchSheetForm";
 import { WingLogo } from "./SiteHeader";
 
 function TeamCard({
@@ -91,33 +94,53 @@ function TeamCard({
 }
 
 export function AnalysisWorkbench() {
+  const [match, setMatch] = useState<MatchInput>(() => structuredClone(demoMatch));
+  const [inputMode, setInputMode] = useState<"sheet" | "json">("sheet");
   const [matchJson, setMatchJson] = useState(() => JSON.stringify(demoMatch, null, 2));
   const [report, setReport] = useState<MatchAnalysis>(() => analyzeMatch(demoMatch));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const heatmaps = useMemo(
+    () => ({
+      home: buildTeamHeatmap(match.home, report.home),
+      away: buildTeamHeatmap(match.away, report.away),
+    }),
+    [match, report],
+  );
+
   const setLine = useMemo(() => {
-    const home = report.home;
-    const away = report.away;
-    return `${home.shortName} ${report.setScore} ${away.shortName}`;
+    return `${report.home.shortName} ${report.setScore} ${report.away.shortName}`;
   }, [report]);
 
-  function runLocal() {
+  function syncJsonFromMatch(next: MatchInput) {
+    setMatch(next);
+    setMatchJson(JSON.stringify(next, null, 2));
+  }
+
+  function runAnalyze(source?: MatchInput) {
     try {
       setBusy(true);
       setError(null);
-      const parsed = JSON.parse(matchJson) as MatchInput;
+      let parsed = source;
+      if (!parsed) {
+        if (inputMode === "json") parsed = JSON.parse(matchJson) as MatchInput;
+        else parsed = match;
+      }
+      setMatch(parsed);
+      setMatchJson(JSON.stringify(parsed, null, 2));
       setReport(analyzeMatch(parsed));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "JSON 파싱 실패");
+      setError(e instanceof Error ? e.message : "분석 실패");
     } finally {
       setBusy(false);
     }
   }
 
   function loadDemo() {
-    setMatchJson(JSON.stringify(demoMatch, null, 2));
-    setReport(analyzeMatch(demoMatch));
+    const next = structuredClone(demoMatch);
+    syncJsonFromMatch(next);
+    setReport(analyzeMatch(next));
     setError(null);
   }
 
@@ -127,29 +150,53 @@ export function AnalysisWorkbench() {
         <p className="eyebrow">MATCH SCOUT</p>
         <h1>경기 넣으면 전력분석</h1>
         <p className="lede">
-          선수별 공격·블로킹·서브·리시브 기록을 넣으면 FAV 기준 강약과 코칭 플랜을 바로 뽑습니다.
+          스코어시트로 선수 기록을 입력하면 등급·강약·코칭 플랜과 코트 히트맵까지 바로 뽑습니다.
         </p>
       </section>
 
-      <section className="editor-grid">
-        <div className="json-pane">
+      <section className="editor-grid analyze-grid">
+        <div className="json-pane sheet-pane">
           <div className="pane-actions">
             <button type="button" onClick={loadDemo} className="btn ghost">
               데모 경기 불러오기
             </button>
-            <button type="button" onClick={runLocal} className="btn primary" disabled={busy}>
+            <button
+              type="button"
+              className={`btn ghost ${inputMode === "sheet" ? "is-active" : ""}`}
+              onClick={() => setInputMode("sheet")}
+            >
+              스코어시트
+            </button>
+            <button
+              type="button"
+              className={`btn ghost ${inputMode === "json" ? "is-active" : ""}`}
+              onClick={() => {
+                setMatchJson(JSON.stringify(match, null, 2));
+                setInputMode("json");
+              }}
+            >
+              JSON
+            </button>
+            <button type="button" onClick={() => runAnalyze()} className="btn primary" disabled={busy}>
               {busy ? "분석 중…" : "전력분석 실행"}
             </button>
           </div>
-          <label className="sr-only" htmlFor="match-json">
-            경기 JSON
-          </label>
-          <textarea
-            id="match-json"
-            value={matchJson}
-            onChange={(e) => setMatchJson(e.target.value)}
-            spellCheck={false}
-          />
+
+          {inputMode === "sheet" ? (
+            <MatchSheetForm match={match} onChange={syncJsonFromMatch} />
+          ) : (
+            <>
+              <label className="sr-only" htmlFor="match-json">
+                경기 JSON
+              </label>
+              <textarea
+                id="match-json"
+                value={matchJson}
+                onChange={(e) => setMatchJson(e.target.value)}
+                spellCheck={false}
+              />
+            </>
+          )}
           {error ? <p className="error-line">{error}</p> : null}
         </div>
 
@@ -174,6 +221,14 @@ export function AnalysisWorkbench() {
             <TeamCard power={report.home} side="home" />
             <TeamCard power={report.away} side="away" />
           </div>
+
+          <section className="notes-block heat-block">
+            <h3>코트 히트맵</h3>
+            <div className="heat-compare">
+              <CourtHeatmap heat={heatmaps.home} />
+              <CourtHeatmap heat={heatmaps.away} />
+            </div>
+          </section>
 
           <section className="notes-block">
             <h3>매치업 노트</h3>

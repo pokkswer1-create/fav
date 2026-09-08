@@ -44,6 +44,7 @@ export function VideoEditorWorkbench() {
   const [file, setFile] = useState<File | null>(null);
   const [clips, setClips] = useState<VideoClipMarker[]>(() => cloneDemoClips());
   const [busy, setBusy] = useState(false);
+  const [detecting, setDetecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
@@ -61,6 +62,33 @@ export function VideoEditorWorkbench() {
 
   function updateClip(id: string, patch: Partial<VideoClipMarker>) {
     setClips((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  }
+
+  async function autoDetectScenes() {
+    try {
+      setDetecting(true);
+      setError(null);
+      setStatus(null);
+      const form = new FormData();
+      if (file) form.append("video", file);
+      const res = await fetch("/api/video/detect", { method: "POST", body: form });
+      const data = (await res.json()) as {
+        error?: string;
+        clips?: VideoClipMarker[];
+        method?: string;
+        durationSec?: number;
+      };
+      if (!res.ok) throw new Error(data.error ?? `감지 실패 (${res.status})`);
+      if (!data.clips?.length) throw new Error("감지된 장면이 없습니다.");
+      setClips(data.clips);
+      setStatus(
+        `자동 장면 감지 ${data.clips.length}클립 · ${data.method === "silence-gaps" ? "오디오 피크" : "그리드 폴백"} · ${data.durationSec?.toFixed(1)}s`,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "장면 감지 실패");
+    } finally {
+      setDetecting(false);
+    }
   }
 
   async function renderHighlights() {
@@ -106,7 +134,8 @@ export function VideoEditorWorkbench() {
         <p className="eyebrow">HIGHLIGHT DESK</p>
         <h1>경기 영상 하이라이트 편집</h1>
         <p className="lede">
-          킬·블로킹·에이스 구간을 찍어 붙이면 FAV 훈련/브리핑용 하이라이트 MP4를 만들어 줍니다.
+          자동 장면 감지로 후보 클립을 뽑거나, 킬·블로킹·에이스 구간을 직접 찍어 하이라이트 MP4를
+          만듭니다.
         </p>
       </section>
 
@@ -158,8 +187,16 @@ export function VideoEditorWorkbench() {
             </button>
             <button
               type="button"
+              className="btn ghost"
+              disabled={detecting || busy}
+              onClick={autoDetectScenes}
+            >
+              {detecting ? "감지 중…" : "자동 장면 감지"}
+            </button>
+            <button
+              type="button"
               className="btn primary"
-              disabled={busy || validClips.length === 0}
+              disabled={busy || detecting || validClips.length === 0}
               onClick={renderHighlights}
             >
               {busy ? "렌더 중…" : "하이라이트 생성"}

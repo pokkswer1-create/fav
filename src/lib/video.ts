@@ -108,30 +108,6 @@ export async function renderHighlightReel(
 }
 
 export async function createSampleMatchVideo(targetPath: string): Promise<void> {
-  await ensureWorkDirs();
-  await run("ffmpeg", [
-    "-y",
-    "-f",
-    "lavfi",
-    "-i",
-    "color=c=0x0B1F17:s=1280x720:d=20",
-    "-f",
-    "lavfi",
-    "-i",
-    "sine=frequency=880:duration=20",
-    "-filter_complex",
-    "[0:v]drawbox=x=80:y=300:w=1120:h=8:color=0xFF2D95:t=fill,drawbox=x=560:y=180:w=160:h=160:color=0xC8F56A@0.35:t=fill[v]",
-    "-map",
-    "[v]",
-    "-map",
-    "1:a",
-    "-c:v",
-    "libx264",
-    "-c:a",
-    "aac",
-    "-shortest",
-    "-movflags",
-    "+faststart",
-    targetPath,
-  ]);
+  const { createDetectableSampleVideo } = await import("./scene-detect");
+  await createDetectableSampleVideo(targetPath);
 }

@@ -18,7 +18,7 @@ export default function HomePage() {
         </div>
         <h1>경기 넣으면 전력, 영상은 컷.</h1>
         <p className="lede">
-          배구 경기 기록을 전력분석 리포트로 바꾸고, 킬·블로킹·에이스 구간을 하이라이트 영상으로
+          스코어시트로 전력을 분석하고, 코트 히트맵을 보며, 영상은 자동 장면 감지로 하이라이트를
           붙입니다.
         </p>
         <div className="cta-row">
