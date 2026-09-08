@@ -726,10 +726,42 @@ a {
   box-shadow: inset 0 0 0 1px rgba(255, 45, 149, 0.28);
 }
 
+.player-track-bar {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.65rem;
+  align-items: end;
+  margin-bottom: 0.85rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.player-track-bar label {
+  display: grid;
+  gap: 0.3rem;
+  color: var(--ink-dim);
+  font-size: 0.78rem;
+}
+
+.player-track-bar select {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: #06110c;
+  color: var(--ink);
+  padding: 0.5rem 0.55rem;
+  font: inherit;
+}
+
+.player-tag {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--magenta);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
 @media (max-width: 960px) {
-  .sheet-meta,
-  .sheet-team-head,
-  .heat-compare {
+  .player-track-bar {
     grid-template-columns: 1fr;
   }
 }

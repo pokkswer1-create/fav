@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { ClipKind, VideoClipMarker } from "@/lib/types";
+import { demoMatch } from "@/lib/demo-match";
+import type { ClipKind, PlayerStats, VideoClipMarker } from "@/lib/types";
 import { WingLogo } from "./SiteHeader";
 
 const KIND_OPTIONS: { value: ClipKind; label: string }[] = [
@@ -13,6 +14,8 @@ const KIND_OPTIONS: { value: ClipKind; label: string }[] = [
   { value: "error", label: "범실" },
   { value: "custom", label: "커스텀" },
 ];
+
+const ROSTER: PlayerStats[] = [...demoMatch.home.players, ...demoMatch.away.players];
 
 const DEMO_CLIPS: VideoClipMarker[] = [
   { id: "c1", startSec: 1, endSec: 5, kind: "ace", label: "오프닝 에이스" },
@@ -45,10 +48,17 @@ export function VideoEditorWorkbench() {
   const [clips, setClips] = useState<VideoClipMarker[]>(() => cloneDemoClips());
   const [busy, setBusy] = useState(false);
   const [detecting, setDetecting] = useState(false);
+  const [tracking, setTracking] = useState(false);
+  const [selectedNumber, setSelectedNumber] = useState(7);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState("/api/video/highlights");
+
+  const selectedPlayer = useMemo(
+    () => ROSTER.find((p) => p.number === selectedNumber) ?? ROSTER[0],
+    [selectedNumber],
+  );
 
   const validClips = useMemo(
     () => clips.filter((c) => c.endSec > c.startSec && c.endSec - c.startSec <= 60),
@@ -91,6 +101,37 @@ export function VideoEditorWorkbench() {
     }
   }
 
+  async function trackSelectedPlayer() {
+    try {
+      setTracking(true);
+      setError(null);
+      setStatus(null);
+      const form = new FormData();
+      if (file) form.append("video", file);
+      form.append("number", String(selectedPlayer.number));
+      form.append("roster", JSON.stringify(ROSTER));
+      const res = await fetch("/api/video/track-player", { method: "POST", body: form });
+      const data = (await res.json()) as {
+        error?: string;
+        clips?: VideoClipMarker[];
+        method?: string;
+        detections?: unknown[];
+        playerName?: string;
+        playerNumber?: number;
+      };
+      if (!res.ok) throw new Error(data.error ?? `트래킹 실패 (${res.status})`);
+      if (!data.clips?.length) throw new Error("선수 구간을 찾지 못했습니다.");
+      setClips(data.clips);
+      setStatus(
+        `#${data.playerNumber} ${data.playerName} 트래킹 ${data.clips.length}클립 · ${data.method} · 감지 ${data.detections?.length ?? 0}프레임`,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "선수 트래킹 실패");
+    } finally {
+      setTracking(false);
+    }
+  }
+
   async function renderHighlights() {
     try {
       setBusy(true);
@@ -120,7 +161,12 @@ export function VideoEditorWorkbench() {
       const url = URL.createObjectURL(blob);
       setDownloadUrl(url);
       setPreviewUrl(url);
-      setStatus(`하이라이트 ${validClips.length}클립 생성 완료 · ${(blob.size / 1024).toFixed(0)}KB`);
+      const playerTag = validClips.find((c) => c.playerNumber)?.playerNumber;
+      setStatus(
+        `하이라이트 ${validClips.length}클립 생성 완료 · ${(blob.size / 1024).toFixed(0)}KB${
+          playerTag ? ` · #${playerTag}` : ""
+        }`,
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "편집 실패");
     } finally {
@@ -128,14 +174,16 @@ export function VideoEditorWorkbench() {
     }
   }
 
+  const locked = busy || detecting || tracking;
+
   return (
     <div className="workbench">
       <section className="workbench-intro">
         <p className="eyebrow">HIGHLIGHT DESK</p>
         <h1>경기 영상 하이라이트 편집</h1>
         <p className="lede">
-          자동 장면 감지로 후보 클립을 뽑거나, 킬·블로킹·에이스 구간을 직접 찍어 하이라이트 MP4를
-          만듭니다.
+          등번호로 선수를 고르면 트래킹 구간을 잘라 주고, 장면 감지·수동 클립으로도 하이라이트 MP4를
+          만들 수 있습니다.
         </p>
       </section>
 
@@ -163,13 +211,38 @@ export function VideoEditorWorkbench() {
               />
             </label>
             <p className="hint">
-              {file ? file.name : "업로드 없으면 20초 데모 영상을 사용합니다."} · 예상 길이{" "}
-              {totalSeconds.toFixed(1)}s
+              {file ? file.name : "업로드 없으면 20초 데모 영상(등번호 7/10/4 오버레이)을 사용합니다."}{" "}
+              · 예상 길이 {totalSeconds.toFixed(1)}s
             </p>
           </div>
         </div>
 
         <div className="clip-pane">
+          <div className="player-track-bar">
+            <label>
+              트래킹 선수
+              <select
+                value={selectedNumber}
+                onChange={(e) => setSelectedNumber(Number(e.target.value))}
+                aria-label="트래킹할 선수"
+              >
+                {ROSTER.map((p) => (
+                  <option key={p.id} value={p.number}>
+                    #{p.number} {p.name} ({p.position})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="btn primary"
+              disabled={locked}
+              onClick={trackSelectedPlayer}
+            >
+              {tracking ? "트래킹 중…" : `#${selectedPlayer.number} 선수 컷 만들기`}
+            </button>
+          </div>
+
           <div className="pane-actions">
             <button type="button" className="btn ghost" onClick={() => setClips((c) => [...c, newClip()])}>
               클립 추가
@@ -185,18 +258,13 @@ export function VideoEditorWorkbench() {
             >
               데모 타임라인
             </button>
-            <button
-              type="button"
-              className="btn ghost"
-              disabled={detecting || busy}
-              onClick={autoDetectScenes}
-            >
+            <button type="button" className="btn ghost" disabled={locked} onClick={autoDetectScenes}>
               {detecting ? "감지 중…" : "자동 장면 감지"}
             </button>
             <button
               type="button"
               className="btn primary"
-              disabled={busy || detecting || validClips.length === 0}
+              disabled={locked || validClips.length === 0}
               onClick={renderHighlights}
             >
               {busy ? "렌더 중…" : "하이라이트 생성"}
@@ -225,6 +293,11 @@ export function VideoEditorWorkbench() {
                       </option>
                     ))}
                   </select>
+                  {clip.playerNumber ? (
+                    <p className="player-tag">
+                      #{clip.playerNumber} {clip.playerName}
+                    </p>
+                  ) : null}
                   <label>
                     시작
                     <input
@@ -265,7 +338,15 @@ export function VideoEditorWorkbench() {
           {error ? <p className="error-line">{error}</p> : null}
           {status ? <p className="status-line">{status}</p> : null}
           {downloadUrl ? (
-            <a className="btn primary download" href={downloadUrl} download="fav-highlights.mp4">
+            <a
+              className="btn primary download"
+              href={downloadUrl}
+              download={
+                selectedPlayer
+                  ? `fav-player-${selectedPlayer.number}-highlights.mp4`
+                  : "fav-highlights.mp4"
+              }
+            >
               하이라이트 다운로드
             </a>
           ) : null}

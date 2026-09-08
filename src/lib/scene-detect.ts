@@ -180,9 +180,10 @@ export async function detectHighlightCandidates(sourcePath: string): Promise<{
   };
 }
 
-/** Build a sample match video with quiet gaps + loud spikes for detection demos. */
+/** Build a sample match video with quiet gaps + loud spikes + jersey number overlays. */
 export async function createDetectableSampleVideo(targetPath: string): Promise<void> {
   await ensureWorkDirs();
+  const font = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
 
   await new Promise<void>((resolve, reject) => {
     const child = spawn(
@@ -198,7 +199,14 @@ export async function createDetectableSampleVideo(targetPath: string): Promise<v
         "-i",
         "sine=frequency=660:duration=20",
         "-filter_complex",
-        "[0:v]drawbox=x=80:y=300:w=1120:h=8:color=0xFF2D95:t=fill,drawbox=x=560:y=180:w=160:h=160:color=0xC8F56A@0.35:t=fill[v];[1:a]volume=enable='between(t,0,1.2)+between(t,4.2,6.8)+between(t,11.0,13.5)+between(t,17.5,20)':volume=0.001,volume=enable='between(t,1.2,4.2)+between(t,6.8,11.0)+between(t,13.5,17.5)':volume=1[a]",
+        [
+          "[0:v]drawbox=x=80:y=300:w=1120:h=8:color=0xFF2D95:t=fill",
+          "drawbox=x=520:y=220:w=240:h=280:color=0x1a1a1a@0.9:t=fill",
+          `drawtext=fontfile=${font}:text='7':fontsize=140:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-20:enable='between(t,1.2,4.2)'`,
+          `drawtext=fontfile=${font}:text='10':fontsize=120:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-20:enable='between(t,6.8,11.0)'`,
+          `drawtext=fontfile=${font}:text='4':fontsize=140:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-20:enable='between(t,13.5,17.5)'[v]`,
+        ].join(",") +
+          ";[1:a]volume=enable='between(t,0,1.2)+between(t,4.2,6.8)+between(t,11.0,13.5)+between(t,17.5,20)':volume=0.001,volume=enable='between(t,1.2,4.2)+between(t,6.8,11.0)+between(t,13.5,17.5)':volume=1[a]",
         "-map",
         "[v]",
         "-map",

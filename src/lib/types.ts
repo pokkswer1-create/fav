@@ -103,4 +103,7 @@ export interface VideoClipMarker {
   endSec: number;
   kind: ClipKind;
   label: string;
+  playerId?: string;
+  playerName?: string;
+  playerNumber?: number;
 }
