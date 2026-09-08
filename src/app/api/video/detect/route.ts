@@ -14,8 +14,12 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
     await ensureWorkDirs();
-    const form = await request.formData();
-    const file = form.get("video");
+    const contentType = request.headers.get("content-type") ?? "";
+    let file: FormDataEntryValue | null = null;
+    if (contentType.includes("multipart/form-data")) {
+      const form = await request.formData();
+      file = form.get("video");
+    }
 
     let sourcePath = "";
     if (file && typeof file !== "string" && "arrayBuffer" in file) {
@@ -30,11 +34,8 @@ export async function POST(request: Request) {
       await fs.writeFile(sourcePath, bytes);
     } else {
       sourcePath = path.join(UPLOAD_ROOT, "sample-match.mp4");
-      try {
-        await fs.access(sourcePath);
-      } catch {
-        await createDetectableSampleVideo(sourcePath);
-      }
+      // Always refresh detectable sample so silence-gap demos stay accurate.
+      await createDetectableSampleVideo(sourcePath);
     }
 
     const result = await detectHighlightCandidates(sourcePath);
