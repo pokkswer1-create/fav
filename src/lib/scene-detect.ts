@@ -77,10 +77,11 @@ export function windowsToPeaks(
   windows: Array<{ start: number; end: number }>,
   durationSec: number,
 ): AudioPeak[] {
-  return windows.map((w) => {
+  const maxLen = Math.max(...windows.map((w) => w.end - w.start), 0.1);
+  return windows.map((w, index) => {
     const mid = (w.start + w.end) / 2;
     const len = w.end - w.start;
-    const intensity = Math.min(1, 0.35 + len / Math.max(durationSec * 0.25, 1) + (len > 2 ? 0.2 : 0));
+    const intensity = Math.min(1, 0.42 + (len / maxLen) * 0.45 + (index === 0 ? 0.08 : 0));
     return { timeSec: mid, intensity };
   });
 }
@@ -195,13 +196,13 @@ export async function createDetectableSampleVideo(targetPath: string): Promise<v
         "-f",
         "lavfi",
         "-i",
-        "sine=frequency=660:duration=20,volume='if(between(t\\,1.2\\,4.2)\\,1\\,if(between(t\\,6.8\\,11.2)\\,0.95\\,if(between(t\\,13.5\\,17.8)\\,0.9\\,0.05)))'",
+        "sine=frequency=660:duration=20",
         "-filter_complex",
-        "[0:v]drawbox=x=80:y=300:w=1120:h=8:color=0xFF2D95:t=fill,drawbox=x=560:y=180:w=160:h=160:color=0xC8F56A@0.35:t=fill[v]",
+        "[0:v]drawbox=x=80:y=300:w=1120:h=8:color=0xFF2D95:t=fill,drawbox=x=560:y=180:w=160:h=160:color=0xC8F56A@0.35:t=fill[v];[1:a]volume=enable='between(t,0,1.2)+between(t,4.2,6.8)+between(t,11.0,13.5)+between(t,17.5,20)':volume=0.001,volume=enable='between(t,1.2,4.2)+between(t,6.8,11.0)+between(t,13.5,17.5)':volume=1[a]",
         "-map",
         "[v]",
         "-map",
-        "1:a",
+        "[a]",
         "-c:v",
         "libx264",
         "-c:a",
