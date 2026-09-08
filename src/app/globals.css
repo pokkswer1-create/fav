@@ -570,6 +570,15 @@ a {
   margin: 0.75rem 0 0;
 }
 
+.status-line {
+  color: var(--lime);
+  margin: 0.75rem 0 0;
+}
+
+.clip-list li.is-invalid {
+  border-color: rgba(255, 143, 143, 0.55);
+}
+
 @keyframes rise {
   from {
     opacity: 0;
