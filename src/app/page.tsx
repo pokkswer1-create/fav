@@ -17,24 +17,29 @@ export default function HomePage() {
           <strong>FAV</strong>
         </div>
         <h1>경기 넣으면 전력, 영상은 컷.</h1>
-        <p className="lede">
-          포인트 스카우트 타임스탬프로 어긋남 없는 컷을 만들고, 전력분석·하이라이트·보관함까지
-          이어서 씁니다.
-        </p>
+        <p className="lede">처음이면 전력분석에서 ‘데모로 해보기’만 누르면 됩니다.</p>
         <div className="cta-row">
-          <Link className="btn primary" href="/scout">
-            스카우트 시작
+          <Link className="btn primary" href="/analyze">
+            전력분석 시작
           </Link>
-          <Link className="btn ghost" href="/bench">
-            벤치 모드
-          </Link>
-          <Link className="btn ghost" href="/analyze">
-            전력분석
+          <Link className="btn ghost" href="/scout">
+            스카우트
           </Link>
           <Link className="btn ghost" href="/editor">
             영상 편집
           </Link>
         </div>
+        <ol className="home-steps">
+          <li>
+            <strong>전력분석</strong> — 데모로 결과 보기
+          </li>
+          <li>
+            <strong>스카우트</strong> — 경기 중 득점·코딩 기록
+          </li>
+          <li>
+            <strong>영상편집</strong> — 타임스탬프로 하이라이트
+          </li>
+        </ol>
       </div>
     </section>
   );

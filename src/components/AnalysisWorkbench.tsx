@@ -16,6 +16,7 @@ import { alignClipsToDuration } from "@/lib/clip-align";
 import { createDemoScoutSession } from "@/lib/demo-scout";
 import { ProStatsPanels } from "./ProStatsPanels";
 import { filterActionsToClips } from "@/lib/scout-filters";
+import { ExplainedButton, HowToPanel } from "./UiGuide";
 
 function resolveScout(matchId: string) {
   return getScoutSession(matchId) ?? getScoutSession("demo-scout-session") ?? createDemoScoutSession();
@@ -100,7 +101,7 @@ function TeamCard({
             </span>
             <span className="score">{p.overall.toFixed(0)}</span>
             <span className="tags">{p.tags.slice(0, 2).join(" · ")}</span>
-            <button type="button" className="btn ghost player-cut-btn" onClick={() => onPlayerCut(p)}>
+            <button type="button" className="btn ghost player-cut-btn" title="이 선수의 영상 컷을 편집기로 보냅니다" onClick={() => onPlayerCut(p)}>
               이 선수 컷
             </button>
           </li>
@@ -120,6 +121,7 @@ export function AnalysisWorkbench() {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
     const matchId = search.get("match");
@@ -285,62 +287,109 @@ export function AnalysisWorkbench() {
       <section className="workbench-intro">
         <p className="eyebrow">MATCH SCOUT</p>
         <h1>경기 넣으면 전력분석</h1>
-        <p className="lede">
-          스코어시트·스카우트 기록을 분석하고, 선수 컷/리포트/보관함까지 바로 연결합니다.
-        </p>
+        <p className="lede">먼저 데모로 결과를 보고, 필요하면 기록을 수정한 뒤 다시 분석하세요.</p>
       </section>
+
+      <HowToPanel
+        title="이렇게 쓰세요"
+        steps={[
+          "① 데모로 해보기 — 연습용 경기가 바로 채워집니다.",
+          "② 전력분석 실행 — 오른쪽(또는 아래)에 등급·강약·히트맵이 나옵니다.",
+          "③ (선택) 컷으로 보내기 — 영상 편집 화면으로 클립을 넘깁니다.",
+        ]}
+      />
 
       <section className="editor-grid analyze-grid">
         <div className="json-pane sheet-pane">
-          <div className="pane-actions">
-            <button type="button" onClick={loadDemo} className="btn ghost">
-              데모 경기
-            </button>
+          <div className="action-simple">
+            <ExplainedButton
+              variant="primary"
+              label="데모로 해보기"
+              hint="연습용 FAV 경기를 불러옵니다"
+              onClick={loadDemo}
+            />
+            <ExplainedButton
+              variant="primary"
+              label={busy ? "분석 중…" : "전력분석 실행"}
+              hint="현재 입력한 기록으로 전력·강약을 계산합니다"
+              onClick={() => runAnalyze()}
+              disabled={busy}
+            />
+            <ExplainedButton
+              label="컷으로 보내기"
+              hint="스카우트/코딩 타임스탬프를 영상편집으로 보냅니다"
+              onClick={sendSuggestionsToEditor}
+            />
+          </div>
+
+          <div className="action-simple secondary">
+            <ExplainedButton
+              label="보관함 저장"
+              hint="지금 경기·분석 결과를 이 기기에 저장합니다"
+              onClick={saveLibrary}
+            />
+            <ExplainedButton
+              label="리포트 받기"
+              hint="마크다운 리포트 파일을 다운로드합니다"
+              onClick={exportReport}
+            />
             <button
               type="button"
-              className={`btn ghost ${inputMode === "sheet" ? "is-active" : ""}`}
-              onClick={() => setInputMode("sheet")}
+              className={`btn ghost ${showAdvanced ? "is-active" : ""}`}
+              onClick={() => setShowAdvanced((v) => !v)}
+              title="입력 방식·인쇄·스킬별 컷 등"
             >
-              스코어시트
-            </button>
-            <button
-              type="button"
-              className={`btn ghost ${inputMode === "json" ? "is-active" : ""}`}
-              onClick={() => {
-                setMatchJson(JSON.stringify(match, null, 2));
-                setInputMode("json");
-              }}
-            >
-              JSON
-            </button>
-            <button type="button" onClick={() => runAnalyze()} className="btn primary" disabled={busy}>
-              {busy ? "분석 중…" : "전력분석 실행"}
-            </button>
-            <button type="button" className="btn ghost" onClick={saveLibrary}>
-              보관함 저장
-            </button>
-            <button type="button" className="btn ghost" onClick={exportReport}>
-              리포트 MD
-            </button>
-            <button type="button" className="btn ghost" onClick={printReport}>
-              인쇄
-            </button>
-            <button type="button" className="btn primary" onClick={sendSuggestionsToEditor}>
-              컷으로 보내기
-            </button>
-            <button type="button" className="btn ghost" onClick={() => sendSkillFilterToEditor("A")}>
-              공격 컷
-            </button>
-            <button type="button" className="btn ghost" onClick={() => sendSkillFilterToEditor("S")}>
-              서브 컷
-            </button>
-            <button type="button" className="btn ghost" onClick={() => sendSkillFilterToEditor("B")}>
-              블로킹 컷
+              {showAdvanced ? "고급 닫기" : "고급 기능"}
             </button>
           </div>
+
+          {showAdvanced ? (
+            <div className="advanced-box">
+              <p className="hint">입력 방식과 세부 컷·인쇄는 여기에 모아 두었습니다.</p>
+              <div className="action-simple secondary">
+                <ExplainedButton
+                  label="스코어시트"
+                  hint="표로 선수 기록을 직접 수정합니다"
+                  className={inputMode === "sheet" ? "is-active" : ""}
+                  onClick={() => setInputMode("sheet")}
+                />
+                <ExplainedButton
+                  label="JSON"
+                  hint="경기 데이터를 JSON으로 붙여넣습니다"
+                  className={inputMode === "json" ? "is-active" : ""}
+                  onClick={() => {
+                    setMatchJson(JSON.stringify(match, null, 2));
+                    setInputMode("json");
+                  }}
+                />
+                <ExplainedButton
+                  label="인쇄"
+                  hint="브라우저 인쇄 창을 엽니다"
+                  onClick={printReport}
+                />
+                <ExplainedButton
+                  label="공격 컷"
+                  hint="홈팀 공격(A) 코딩만 영상편집으로 보냅니다"
+                  onClick={() => sendSkillFilterToEditor("A")}
+                />
+                <ExplainedButton
+                  label="서브 컷"
+                  hint="홈팀 서브(S) 코딩만 보냅니다"
+                  onClick={() => sendSkillFilterToEditor("S")}
+                />
+                <ExplainedButton
+                  label="블로킹 컷"
+                  hint="홈팀 블로킹(B) 코딩만 보냅니다"
+                  onClick={() => sendSkillFilterToEditor("B")}
+                />
+              </div>
+            </div>
+          ) : null}
+
           {status ? <p className="status-line status-flash">{status}</p> : null}
           {error ? <p className="error-line">{error}</p> : null}
 
+          <p className="section-label">경기 기록 입력</p>
           {inputMode === "sheet" ? (
             <MatchSheetForm match={match} onChange={syncJsonFromMatch} />
           ) : (
@@ -359,6 +408,7 @@ export function AnalysisWorkbench() {
         </div>
 
         <div className="report-pane">
+          <p className="section-label">분석 결과</p>
           <div className="report-hero">
             <WingLogo size={56} />
             <div>
@@ -382,6 +432,7 @@ export function AnalysisWorkbench() {
 
           <section className="notes-block heat-block">
             <h3>코트 히트맵</h3>
+            <p className="hint">포지션·기록 기반 활동 구역입니다. 진할수록 그 구역 비중이 큽니다.</p>
             <div className="heat-compare">
               <CourtHeatmap heat={heatmaps.home} />
               <CourtHeatmap heat={heatmaps.away} />
@@ -414,6 +465,7 @@ export function AnalysisWorkbench() {
 
           <section className="notes-block">
             <h3>영상 편집 추천 컷</h3>
+            <p className="hint">위 “컷으로 보내기”를 누르면 편집기로 넘어갑니다.</p>
             <ul className="clip-suggest">
               {report.highlightSuggestions.map((h) => (
                 <li key={h.kind}>

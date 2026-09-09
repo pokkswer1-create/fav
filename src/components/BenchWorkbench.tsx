@@ -29,6 +29,7 @@ import { demoMatch } from "@/lib/demo-match";
 import type { PlayerStats, Position } from "@/lib/types";
 import { WingLogo } from "./SiteHeader";
 import { ProStatsPanels } from "./ProStatsPanels";
+import { ExplainedButton, HowToPanel } from "./UiGuide";
 
 function toPlayers(
   list: Array<{ id: string; name: string; number: number; position: string }>,
@@ -129,9 +130,18 @@ export function BenchWorkbench() {
         <p className="eyebrow">BENCH LIVE</p>
         <h1>벤치 모드</h1>
         <p className="lede">
-          태블릿용 라이브 보드 — 사이드아웃·로테이션·공격효율을 한눈에 보고 DVW/리포트를 내보냅니다.
+          사이드아웃·로테이션·공격효율을 한눈에 보는 보드입니다. 코딩은 스카우트에서 하세요.
         </p>
       </section>
+
+      <HowToPanel
+        title="벤치 보드 사용법"
+        steps={[
+          "① 데모 — 연습용 스카우트 통계를 불러옵니다.",
+          "② 위 KPI와 로테이션·효율 표를 확인합니다.",
+          "③ 필요하면 DVW/리포트를 받거나 스카우트·분석으로 이동합니다.",
+        ]}
+      />
 
       <div className="bench-hero">
         <WingLogo size={64} />
@@ -174,32 +184,40 @@ export function BenchWorkbench() {
         </div>
       </div>
 
-      <div className="pane-actions">
-        <button type="button" className="btn ghost" onClick={refreshFromStorage}>
-          새로고침
-        </button>
-        <button type="button" className="btn ghost" onClick={loadDemo}>
-          데모
-        </button>
-        <button type="button" className="btn ghost" onClick={exportDvw}>
-          DVW
-        </button>
-        <button type="button" className="btn ghost" onClick={exportReport}>
-          리포트 MD
-        </button>
-        <button type="button" className="btn primary" onClick={() => router.push("/scout")}>
-          스카우트 코딩
-        </button>
-        <button
-          type="button"
-          className="btn primary"
+      <div className="action-simple">
+        <ExplainedButton
+          variant="primary"
+          label="데모"
+          hint="연습용 스카우트 통계를 불러옵니다"
+          onClick={loadDemo}
+        />
+        <ExplainedButton
+          label="새로고침"
+          hint="저장된 최신 스카우트 세션을 다시 읽습니다"
+          onClick={refreshFromStorage}
+        />
+        <ExplainedButton
+          variant="primary"
+          label="전력분석"
+          hint="이 경기 분석 화면으로 이동합니다"
           onClick={() => router.push(`/analyze?match=${encodeURIComponent(session.matchId)}`)}
-        >
-          전력분석
-        </button>
+        />
+        <ExplainedButton
+          label="스카우트 코딩"
+          hint="기록을 남기러 스카우트 화면으로 갑니다"
+          onClick={() => router.push("/scout")}
+        />
+      </div>
+      <div className="action-simple secondary">
+        <ExplainedButton label="DVW" hint="DataVolley 스타일 텍스트를 내보냅니다" onClick={exportDvw} />
+        <ExplainedButton
+          label="리포트 MD"
+          hint="마크다운 리포트 파일을 받습니다"
+          onClick={exportReport}
+        />
       </div>
 
-      {status ? <p className="status-line">{status}</p> : null}
+      {status ? <p className="status-line status-flash">{status}</p> : null}
 
       <ProStatsPanels
         scout={session}

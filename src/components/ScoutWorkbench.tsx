@@ -38,6 +38,7 @@ import {
 } from "@/lib/video-clock";
 import type { PlayerStats, Position } from "@/lib/types";
 import { WingLogo } from "./SiteHeader";
+import { HowToPanel, ExplainedButton } from "./UiGuide";
 
 const TERMINATIONS: { value: PointTermination; label: string }[] = [
   { value: "kill", label: "킬" },
@@ -378,10 +379,17 @@ export function ScoutWorkbench() {
       <section className="workbench-intro">
         <p className="eyebrow">LIVE SCOUT</p>
         <h1>포인트 스카우트</h1>
-        <p className="lede">
-          영상 재생 시각이 시계에 자동 동기화됩니다. 득점 버튼을 누르면 그 시각이 컷 타임스탬프가 됩니다.
-        </p>
+        <p className="lede">영상 시계에 맞춰 득점·코딩을 남기면, 그 시각이 영상 컷이 됩니다.</p>
       </section>
+
+      <HowToPanel
+        title="스카우트 사용법"
+        steps={[
+          "① 데모 스카우트 — 연습용 기록·타임스탬프를 불러옵니다.",
+          "② 빠른 득점 버튼 또는 프로 코딩으로 포인트를 남깁니다.",
+          "③ 저장 후 타임스탬프 컷 → 편집, 또는 전력분석으로 이동합니다.",
+        ]}
+      />
 
       <div className="scout-media-grid">
         <div className="scout-video-pane">
@@ -675,28 +683,40 @@ export function ScoutWorkbench() {
         </div>
       </div>
 
-      <div className="pane-actions">
-        <button type="button" className="btn ghost" onClick={undo}>
-          실행취소
-        </button>
-        <button type="button" className="btn ghost" onClick={loadDemo}>
-          데모 스카우트
-        </button>
-        <button type="button" className="btn ghost" onClick={saveAll}>
-          저장
-        </button>
-        <button type="button" className="btn ghost" onClick={goAnalyze}>
-          전력분석으로
-        </button>
-        <button type="button" className="btn primary" onClick={() => sendToEditor(false)}>
-          타임스탬프 컷 → 편집
-        </button>
-        <button type="button" className="btn primary" onClick={() => sendToEditor(true)}>
-          #{selectedPlayer?.number}만 컷 → 편집
-        </button>
+      <div className="action-simple">
+        <ExplainedButton
+          variant="primary"
+          label="데모 스카우트"
+          hint="연습용 포인트·타임스탬프를 불러옵니다"
+          onClick={loadDemo}
+        />
+        <ExplainedButton
+          label="저장"
+          hint="경기·스카우트·로스터를 보관함에 저장합니다"
+          onClick={saveAll}
+        />
+        <ExplainedButton
+          variant="primary"
+          label="타임스탬프 컷 → 편집"
+          hint="기록된 시각으로 영상 클립을 만들어 편집기로 보냅니다"
+          onClick={() => sendToEditor(false)}
+        />
+        <ExplainedButton
+          label="전력분석으로"
+          hint="저장 후 전력분석 화면으로 이동합니다"
+          onClick={goAnalyze}
+        />
+      </div>
+      <div className="action-simple secondary">
+        <ExplainedButton label="실행취소" hint="마지막 코딩/포인트를 취소합니다" onClick={undo} />
+        <ExplainedButton
+          label={`#${selectedPlayer?.number ?? "-"}만 컷`}
+          hint="선택한 선수 기록만 영상편집으로 보냅니다"
+          onClick={() => sendToEditor(true)}
+        />
       </div>
 
-      {status ? <p className="status-line">{status}</p> : null}
+      {status ? <p className="status-line status-flash">{status}</p> : null}
 
       <ul className="scout-log">
         {[...session.points].reverse().slice(0, 12).map((p) => (
