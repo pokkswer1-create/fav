@@ -25,6 +25,9 @@ export default function HomePage() {
           <Link className="btn primary" href="/scout">
             스카우트 시작
           </Link>
+          <Link className="btn ghost" href="/bench">
+            벤치 모드
+          </Link>
           <Link className="btn ghost" href="/analyze">
             전력분석
           </Link>

@@ -14,6 +14,8 @@ import { buildMarkdownReport, downloadTextFile, openPrintableReport } from "@/li
 import { clipsFromScoutPoints } from "@/lib/scout";
 import { alignClipsToDuration } from "@/lib/clip-align";
 import { createDemoScoutSession } from "@/lib/demo-scout";
+import { ProStatsPanels } from "./ProStatsPanels";
+import { filterActionsToClips } from "@/lib/scout-filters";
 
 function resolveScout(matchId: string) {
   return getScoutSession(matchId) ?? getScoutSession("demo-scout-session") ?? createDemoScoutSession();
@@ -141,6 +143,8 @@ export function AnalysisWorkbench() {
     [match, report],
   );
 
+  const scoutLive = useMemo(() => resolveScout(match.id), [match.id, report, status]);
+
   const setLine = useMemo(() => {
     return `${report.home.shortName} ${report.setScore} ${report.away.shortName}`;
   }, [report]);
@@ -228,7 +232,11 @@ export function AnalysisWorkbench() {
 
   function sendSuggestionsToEditor() {
     const scout = resolveScout(match.id);
-    const clips = alignClipsToDuration(clipsFromScoutPoints(scout.points, 20), 20);
+    const fromActions = filterActionsToClips(scout.actions ?? [], { durationSec: 20 });
+    const clips = alignClipsToDuration(
+      fromActions.length ? fromActions : clipsFromScoutPoints(scout.points, 20),
+      20,
+    );
     setEditorBridge({
       version: 1,
       createdAt: new Date().toISOString(),
@@ -236,9 +244,36 @@ export function AnalysisWorkbench() {
       clips: clips.length ? clips : undefined,
       autoTrack: false,
       matchId: match.id,
-      message: clips.length ? "스카우트 기반 전체 컷" : "편집기에서 장면 감지를 실행하세요",
+      message: clips.length
+        ? fromActions.length
+          ? "프로 코딩 기반 전체 컷"
+          : "스카우트 기반 전체 컷"
+        : "편집기에서 장면 감지를 실행하세요",
     });
     router.push(clips.length ? "/editor?bridge=1" : "/editor");
+  }
+
+  function sendSkillFilterToEditor(skill: "A" | "S" | "B") {
+    const scout = resolveScout(match.id);
+    const clips = filterActionsToClips(scout.actions ?? [], {
+      skill,
+      team: "home",
+      durationSec: 20,
+    });
+    if (!clips.length) {
+      setStatus(`${skill} 코딩 타임스탬프가 없습니다. 스카우트에서 프로 코딩을 하세요.`);
+      return;
+    }
+    setEditorBridge({
+      version: 1,
+      createdAt: new Date().toISOString(),
+      source: "analyze",
+      clips,
+      matchId: match.id,
+      mediaDurationSec: 20,
+      message: `필터 ${skill} 홈 클립`,
+    });
+    router.push("/editor?bridge=1");
   }
 
   return (
@@ -288,6 +323,15 @@ export function AnalysisWorkbench() {
             </button>
             <button type="button" className="btn primary" onClick={sendSuggestionsToEditor}>
               컷으로 보내기
+            </button>
+            <button type="button" className="btn ghost" onClick={() => sendSkillFilterToEditor("A")}>
+              공격 컷
+            </button>
+            <button type="button" className="btn ghost" onClick={() => sendSkillFilterToEditor("S")}>
+              서브 컷
+            </button>
+            <button type="button" className="btn ghost" onClick={() => sendSkillFilterToEditor("B")}>
+              블로킹 컷
             </button>
           </div>
 
@@ -339,6 +383,12 @@ export function AnalysisWorkbench() {
               <CourtHeatmap heat={heatmaps.away} />
             </div>
           </section>
+
+          <ProStatsPanels
+            scout={scoutLive}
+            homeName={report.home.teamName}
+            awayName={report.away.teamName}
+          />
 
           <section className="notes-block">
             <h3>매치업 노트</h3>

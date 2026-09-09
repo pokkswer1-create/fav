@@ -6,6 +6,7 @@ import { demoMatch } from "@/lib/demo-match";
 import { createDemoScoutSession } from "@/lib/demo-scout";
 import {
   analyzeSideOut,
+  appendCodedAction,
   buildMatchFromScout,
   clipsFromScoutPoints,
   computeSetScores,
@@ -15,6 +16,9 @@ import {
   type ScoutSession,
   type TeamSide,
 } from "@/lib/scout";
+import { SkillCodePad, skillDraftSummary, useDefaultSkillDraft } from "./SkillCodePad";
+import { buildDvwExport, downloadDvw } from "@/lib/dvw-export";
+import { filterActionsToClips } from "@/lib/scout-filters";
 import { alignClipsToDuration } from "@/lib/clip-align";
 import {
   getCustomRosters,
@@ -94,6 +98,9 @@ export function ScoutWorkbench() {
     homeName: demoMatch.home.name,
     awayName: demoMatch.away.name,
     points: [],
+    actions: [],
+    homeRotation: 1,
+    awayRotation: 1,
   }));
   const [setIndex, setSetIndex] = useState(0);
   const [serving, setServing] = useState<TeamSide>("home");
@@ -101,6 +108,9 @@ export function ScoutWorkbench() {
   const [followPlayback, setFollowPlayback] = useState(true);
   const [manualOverride, setManualOverride] = useState(false);
   const [mediaDuration, setMediaDuration] = useState(20);
+  const [skillDraft, setSkillDraft] = useDefaultSkillDraft();
+  const [codeTeam, setCodeTeam] = useState<TeamSide>("home");
+  const [showProCode, setShowProCode] = useState(true);
   const [selectedPlayerId, setSelectedPlayerId] = useState(
     () => (getCustomRosters() ?? fromDemoRosters()).home[0]?.id ?? "",
   );
@@ -157,10 +167,7 @@ export function ScoutWorkbench() {
         : videoClock;
     if (followPlayback && !manualOverride) setVideoClock(stamped);
 
-    const ourPlayer =
-      winner === "home" || termination === "our_error" || termination === "kill" || termination === "ace" || termination === "block"
-        ? selectedPlayer
-        : selectedPlayer;
+    const ourPlayer = selectedPlayer;
 
     const point: ScoutPoint = {
       id: newId(),
@@ -173,6 +180,8 @@ export function ScoutWorkbench() {
       playerNumber: ourPlayer?.number,
       playerName: ourPlayer?.name,
       videoTimeSec: Number(stamped.toFixed(1)),
+      homeRotation: session.homeRotation ?? 1,
+      awayRotation: session.awayRotation ?? 1,
     };
 
     const points = [...session.points, point];
@@ -183,7 +192,103 @@ export function ScoutWorkbench() {
     );
   }
 
+  function recordSkillAction() {
+    const stamped =
+      followPlayback && !manualOverride && videoRef.current
+        ? captureClockFromPlayer(videoRef.current)
+        : videoClock;
+    if (followPlayback && !manualOverride) setVideoClock(stamped);
+
+    const winner: TeamSide | undefined = skillDraft.pointEnding
+      ? skillDraft.effect === "="
+        ? codeTeam === "home"
+          ? "away"
+          : "home"
+        : codeTeam
+      : undefined;
+
+    const next = appendCodedAction(
+      session,
+      {
+        setIndex,
+        team: codeTeam,
+        skill: skillDraft.skill,
+        effect: skillDraft.effect,
+        playerNumber: selectedPlayer?.number,
+        playerName: selectedPlayer?.name,
+        endZone: skillDraft.endZone,
+        combination: skillDraft.skill === "A" ? skillDraft.combination : undefined,
+        videoTimeSec: Number(stamped.toFixed(1)),
+        pointEnding: skillDraft.pointEnding,
+      },
+      winner
+        ? {
+            winner,
+            serving,
+          }
+        : undefined,
+    );
+    setSession(next);
+    if (winner) setServing(winner);
+    setStatus(`코딩 ${skillDraftSummary(skillDraft)} @ ${stamped.toFixed(1)}s`);
+  }
+
+  function exportDvw() {
+    const text = buildDvwExport({
+      homeName: rosters.homeName,
+      awayName: rosters.awayName,
+      date: new Date().toISOString().slice(0, 10),
+      actions: session.actions ?? [],
+    });
+    downloadDvw(`${rosters.homeName}-scout`, text);
+    setStatus("DVW 내보내기 완료");
+  }
+
+  function sendFilteredToEditor(skillOnly?: boolean) {
+    const duration = mediaDuration > 0 ? mediaDuration : 20;
+    const clips = filterActionsToClips(session.actions ?? [], {
+      skill: skillOnly ? skillDraft.skill : undefined,
+      effect: skillOnly ? skillDraft.effect : undefined,
+      playerNumber: skillOnly ? selectedPlayer?.number : undefined,
+      durationSec: duration,
+    });
+    const aligned = alignClipsToDuration(
+      clips.length ? clips : clipsFromScoutPoints(session.points, duration),
+      duration,
+    );
+    if (!aligned.length) {
+      setStatus("필터에 맞는 타임스탬프 액션이 없습니다.");
+      return;
+    }
+    saveAll();
+    setEditorBridge({
+      version: 1,
+      createdAt: new Date().toISOString(),
+      source: "scout",
+      clips: aligned,
+      matchId: session.matchId,
+      mediaDurationSec: duration,
+      message: skillOnly
+        ? `필터 ${skillDraft.skill}${skillDraft.effect} 클립`
+        : "프로 코딩/스카우트 클립",
+    });
+    router.push("/editor?bridge=1");
+  }
   function undo() {
+    const actions = session.actions ?? [];
+    if (actions.length) {
+      const lastAct = actions[actions.length - 1];
+      const nextActions = actions.slice(0, -1);
+      const nextPoints =
+        lastAct.pointEnding && session.points.length
+          ? session.points.slice(0, -1)
+          : session.points;
+      const last = nextPoints[nextPoints.length - 1];
+      touch({ ...session, actions: nextActions, points: nextPoints });
+      if (last) setServing(last.winner);
+      setStatus("마지막 코딩/포인트 취소");
+      return;
+    }
     if (!session.points.length) return;
     const points = session.points.slice(0, -1);
     const last = points[points.length - 1];
@@ -343,8 +448,9 @@ export function ScoutWorkbench() {
                 {rosters.homeName} {currentSet.home} - {currentSet.away} {rosters.awayName}
               </strong>
               <p>
-                SET {setIndex + 1} · 서브 {serving === "home" ? rosters.homeName : rosters.awayName} · 시계{" "}
-                {videoClock.toFixed(1)}s / {mediaDuration.toFixed(1)}s
+                SET {setIndex + 1} · 서브 {serving === "home" ? rosters.homeName : rosters.awayName} · P
+                {session.homeRotation ?? 1}/P{session.awayRotation ?? 1} · 시계 {videoClock.toFixed(1)}s /{" "}
+                {mediaDuration.toFixed(1)}s
               </p>
             </div>
           </div>
@@ -474,9 +580,71 @@ export function ScoutWorkbench() {
         </section>
       ) : null}
 
+      <div className="pane-actions">
+        <button
+          type="button"
+          className={`btn ghost ${showProCode ? "is-active" : ""}`}
+          onClick={() => setShowProCode((v) => !v)}
+        >
+          {showProCode ? "프로 코딩 닫기" : "프로 코딩 (DV/VS)"}
+        </button>
+        <label className="follow-toggle inline">
+          코딩 팀
+          <select value={codeTeam} onChange={(e) => setCodeTeam(e.target.value as TeamSide)}>
+            <option value="home">{rosters.homeName}</option>
+            <option value="away">{rosters.awayName}</option>
+          </select>
+        </label>
+      </div>
+
+      {showProCode ? (
+        <div className="pro-code-block">
+          <SkillCodePad
+            value={skillDraft}
+            onChange={setSkillDraft}
+            rotation={(codeTeam === "home" ? session.homeRotation : session.awayRotation) ?? 1}
+            onRotationChange={(r) =>
+              touch(
+                codeTeam === "home"
+                  ? { ...session, homeRotation: r }
+                  : { ...session, awayRotation: r },
+              )
+            }
+          />
+          <div className="pane-actions">
+            <button type="button" className="btn primary" onClick={recordSkillAction}>
+              코딩 기록 · {skillDraftSummary(skillDraft)}
+            </button>
+            <button type="button" className="btn ghost" onClick={() => sendFilteredToEditor(true)}>
+              이 스킬/퀄리티만 컷
+            </button>
+            <button type="button" className="btn ghost" onClick={() => sendFilteredToEditor(false)}>
+              전체 코딩 컷
+            </button>
+            <button type="button" className="btn ghost" onClick={exportDvw}>
+              DVW 내보내기
+            </button>
+          </div>
+          {(session.actions?.length ?? 0) > 0 ? (
+            <ul className="scout-log code-log">
+              {[...(session.actions ?? [])].reverse().slice(0, 10).map((a) => (
+                <li key={a.id}>
+                  {a.skill}
+                  {a.effect}
+                  {a.combination ? ` ${a.combination}` : ""}
+                  {a.endZone ? ` Z${a.endZone}` : ""} · #
+                  {a.playerNumber ?? "-"} · P{a.rotation ?? "-"} · {a.videoTimeSec ?? "-"}s
+                  {a.pointEnding ? " · POINT" : ""}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="scout-pad">
         <div className="scout-pad-col">
-          <h3>{rosters.homeName} 득점</h3>
+          <h3>{rosters.homeName} 득점 (빠른 입력)</h3>
           <div className="scout-pad-grid">
             {TERMINATIONS.map((t) => (
               <button
@@ -491,7 +659,7 @@ export function ScoutWorkbench() {
           </div>
         </div>
         <div className="scout-pad-col">
-          <h3>{rosters.awayName} 득점</h3>
+          <h3>{rosters.awayName} 득점 (빠른 입력)</h3>
           <div className="scout-pad-grid">
             {TERMINATIONS.map((t) => (
               <button
@@ -534,8 +702,8 @@ export function ScoutWorkbench() {
         {[...session.points].reverse().slice(0, 12).map((p) => (
           <li key={p.id}>
             S{p.setIndex + 1} · {p.winner === "home" ? rosters.homeName : rosters.awayName} · {p.termination}
-            {p.playerNumber != null ? ` · #${p.playerNumber} ${p.playerName}` : ""} ·{" "}
-            {p.videoTimeSec ?? "-"}s
+            {p.playerNumber != null ? ` · #${p.playerNumber} ${p.playerName}` : ""}
+            {p.homeRotation ? ` · P${p.homeRotation}` : ""} · {p.videoTimeSec ?? "-"}s
           </li>
         ))}
       </ul>

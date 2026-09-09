@@ -1,4 +1,6 @@
 import type { ClipKind, MatchInput, PlayerStats, TeamInput, VideoClipMarker } from "./types";
+import type { CodedAction, CourtZone, RotationId, VolleyEffect, VolleySkill } from "./volley-codes";
+import { effectToTermination, nextRotation } from "./volley-codes";
 
 export type PointTermination =
   | "kill"
@@ -23,6 +25,13 @@ export interface ScoutPoint {
   /** Absolute video timestamp (seconds) when the point ended — ground truth for clips */
   videoTimeSec?: number;
   note?: string;
+  /** DataVolley-style enrichment */
+  homeRotation?: RotationId;
+  awayRotation?: RotationId;
+  endSkill?: VolleySkill;
+  endEffect?: VolleyEffect;
+  endZone?: CourtZone;
+  combination?: string;
 }
 
 export interface ScoutSession {
@@ -34,6 +43,10 @@ export interface ScoutSession {
   homeName: string;
   awayName: string;
   points: ScoutPoint[];
+  /** Full skill coding stream (VolleyStation / DataVolley style) */
+  actions?: CodedAction[];
+  homeRotation?: RotationId;
+  awayRotation?: RotationId;
 }
 
 export interface SideOutStats {
@@ -266,3 +279,70 @@ export function createScoutPoint(
     ...partial,
   };
 }
+
+/** Append a coded action; if point-ending, also emit a ScoutPoint and update rotations. */
+export function appendCodedAction(
+  session: ScoutSession,
+  action: Omit<CodedAction, "id" | "rallyIndex"> & { id?: string },
+  opts?: { winner?: TeamSide; serving?: TeamSide },
+): ScoutSession {
+  const actions = [...(session.actions ?? [])];
+  const rallyIndex = actions.filter((a) => a.setIndex === action.setIndex).length;
+  let homeRotation = session.homeRotation ?? 1;
+  let awayRotation = session.awayRotation ?? 1;
+  const full: CodedAction = {
+    ...action,
+    id: action.id ?? `act-${cryptoRandom()}`,
+    rallyIndex,
+    rotation:
+      action.rotation ??
+      (action.team === "home" ? homeRotation : awayRotation),
+  };
+  actions.push(full);
+
+  let points = session.points;
+  if (full.pointEnding && opts?.winner) {
+    const servingResolved: TeamSide =
+      opts.serving ?? (full.skill === "S" ? full.team : "home");
+    const winner = opts.winner;
+    const termination = effectToTermination(full.skill, full.effect, winner === full.team);
+    const point: ScoutPoint = {
+      id: `pt-${full.id}`,
+      setIndex: full.setIndex,
+      pointIndex: points.filter((p) => p.setIndex === full.setIndex).length,
+      serving: servingResolved,
+      winner,
+      termination,
+      playerNumber: full.playerNumber,
+      playerName: full.playerName,
+      videoTimeSec: full.videoTimeSec,
+      homeRotation,
+      awayRotation,
+      endSkill: full.skill,
+      endEffect: full.effect,
+      endZone: full.endZone,
+      combination: full.combination,
+    };
+    points = [...points, point];
+    if (winner !== servingResolved) {
+      if (winner === "home") homeRotation = nextRotation(homeRotation, false);
+      else awayRotation = nextRotation(awayRotation, false);
+    }
+  }
+
+  return {
+    ...session,
+    actions,
+    points,
+    homeRotation,
+    awayRotation,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function cryptoRandom(): string {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+export { effectToTermination, nextRotation };
+

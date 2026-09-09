@@ -2,6 +2,12 @@ import type { MatchAnalysis, MatchInput } from "./types";
 import type { ScoutSession, SideOutStats } from "./scout";
 import { analyzeSideOut, computeSetScores } from "./scout";
 import { pct, scoreLabel } from "./analysis";
+import {
+  analyzeRotations,
+  setterDistribution,
+  skillEfficiency,
+  skillPercent,
+} from "./volley-codes";
 
 export function buildMarkdownReport(
   match: MatchInput,
@@ -55,6 +61,35 @@ export function buildMarkdownReport(
     lines.push(
       `- 세트: ${sets.map((s) => `${s.home}-${s.away}`).join(", ")}`,
     );
+
+    const homeRot = analyzeRotations(scout.points, "home");
+    lines.push("");
+    lines.push("## 로테이션 (HOME)");
+    for (const r of homeRot) {
+      if (!r.sideOutAttempts && !r.breakAttempts) continue;
+      lines.push(
+        `- P${r.rotation}: SO ${pct(r.sideOutRate)} (${r.sideOutWins}/${r.sideOutAttempts}) · BP ${pct(r.breakRate)} (${r.breakWins}/${r.breakAttempts})`,
+      );
+    }
+  }
+
+  if (scout?.actions?.length) {
+    const homeActs = scout.actions.filter((a) => a.team === "home");
+    lines.push("");
+    lines.push("## 스킬 효율 (HOME, VSEFF)");
+    lines.push(`- 공격: ${pct(skillEfficiency(homeActs, "A"))} · 킬% ${pct(skillPercent(homeActs, "A", "#"))}`);
+    lines.push(`- 서브: ${pct(skillEfficiency(homeActs, "S"))} · 리시브: ${pct(skillEfficiency(homeActs, "R"))}`);
+    lines.push(`- 블로킹: ${pct(skillEfficiency(homeActs, "B"))} · 디그: ${pct(skillEfficiency(homeActs, "D"))}`);
+    const dist = setterDistribution(homeActs);
+    if (dist.length) {
+      lines.push("");
+      lines.push("## 세터 분포 (HOME)");
+      for (const row of dist.slice(0, 8)) {
+        lines.push(
+          `- ${row.combination}: ${row.attempts}시도 / ${row.kills}킬 / ${row.errors}범실 · 효율 ${pct(row.efficiency)}`,
+        );
+      }
+    }
   }
 
   lines.push("");
