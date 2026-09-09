@@ -90,7 +90,7 @@ function TeamSheet({
           FAV
         </label>
         <label>
-          세트점수 (쉼표)
+          세트점수
           <input
             value={team.setScores.join(",")}
             onChange={(e) =>
@@ -103,6 +103,7 @@ function TeamSheet({
                   .map((s) => num(s)),
               })
             }
+            placeholder="25,22,25"
           />
         </label>
       </div>
