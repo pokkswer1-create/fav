@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { demoMatch } from "@/lib/demo-match";
 import { apiFetch, sampleVideoUrl } from "@/lib/api-client";
@@ -61,6 +61,7 @@ export function VideoEditorWorkbench() {
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState(() => sampleVideoUrl());
   const [bridgeReady, setBridgeReady] = useState(false);
+  const viewingResultRef = useRef(false);
 
   const selectedPlayer = useMemo(
     () => ROSTER.find((p) => p.number === selectedNumber) ?? ROSTER[0],
@@ -204,13 +205,14 @@ export function VideoEditorWorkbench() {
 
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
+      viewingResultRef.current = true;
       setDownloadUrl(url);
       setPreviewUrl(url);
       const playerTag = validClips.find((c) => c.playerNumber)?.playerNumber;
       setStatus(
         `하이라이트 ${validClips.length}클립 생성 완료 · ${(blob.size / 1024).toFixed(0)}KB${
           playerTag ? ` · #${playerTag}` : ""
-        }`,
+        } · 원본 타임라인 ${mediaDuration.toFixed(1)}s 유지`,
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "편집 실패");
@@ -249,6 +251,9 @@ export function VideoEditorWorkbench() {
               controls
               playsInline
               onLoadedMetadata={(e) => {
+                // Never re-align source clips to the rendered highlight length —
+                // that would shrink/destroy usable timestamps after a successful render.
+                if (viewingResultRef.current) return;
                 const d = e.currentTarget.duration;
                 if (Number.isFinite(d) && d > 0) {
                   setMediaDuration(d);
@@ -270,6 +275,7 @@ export function VideoEditorWorkbench() {
                 onChange={(e) => {
                   const next = e.target.files?.[0] ?? null;
                   setFile(next);
+                  viewingResultRef.current = false;
                   if (next) setPreviewUrl(URL.createObjectURL(next));
                   else {
                     setPreviewUrl(sampleVideoUrl());
@@ -320,7 +326,10 @@ export function VideoEditorWorkbench() {
               type="button"
               className="btn ghost"
               onClick={() => {
+                viewingResultRef.current = false;
                 setClips(cloneDemoClips());
+                setPreviewUrl(sampleVideoUrl());
+                setMediaDuration(20);
                 setError(null);
                 setStatus(null);
               }}
