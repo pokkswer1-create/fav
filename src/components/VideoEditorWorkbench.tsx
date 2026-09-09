@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { demoMatch } from "@/lib/demo-match";
+import { apiFetch, sampleVideoUrl } from "@/lib/api-client";
 import type { ClipKind, PlayerStats, VideoClipMarker } from "@/lib/types";
 import { WingLogo } from "./SiteHeader";
 
@@ -53,7 +54,7 @@ export function VideoEditorWorkbench() {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
-  const [previewUrl, setPreviewUrl] = useState("/api/video/highlights");
+  const [previewUrl, setPreviewUrl] = useState(sampleVideoUrl);
 
   const selectedPlayer = useMemo(
     () => ROSTER.find((p) => p.number === selectedNumber) ?? ROSTER[0],
@@ -81,7 +82,7 @@ export function VideoEditorWorkbench() {
       setStatus(null);
       const form = new FormData();
       if (file) form.append("video", file);
-      const res = await fetch("/api/video/detect", { method: "POST", body: form });
+      const res = await apiFetch("/api/video/detect", { method: "POST", body: form });
       const data = (await res.json()) as {
         error?: string;
         clips?: VideoClipMarker[];
@@ -110,7 +111,7 @@ export function VideoEditorWorkbench() {
       if (file) form.append("video", file);
       form.append("number", String(selectedPlayer.number));
       form.append("roster", JSON.stringify(ROSTER));
-      const res = await fetch("/api/video/track-player", { method: "POST", body: form });
+      const res = await apiFetch("/api/video/track-player", { method: "POST", body: form });
       const data = (await res.json()) as {
         error?: string;
         clips?: VideoClipMarker[];
@@ -147,7 +148,7 @@ export function VideoEditorWorkbench() {
       if (file) form.append("video", file);
       form.append("clips", JSON.stringify(validClips));
 
-      const res = await fetch("/api/video/highlights", {
+      const res = await apiFetch("/api/video/highlights", {
         method: "POST",
         body: form,
       });
@@ -206,7 +207,7 @@ export function VideoEditorWorkbench() {
                   const next = e.target.files?.[0] ?? null;
                   setFile(next);
                   if (next) setPreviewUrl(URL.createObjectURL(next));
-                  else setPreviewUrl("/api/video/highlights");
+                  else setPreviewUrl(sampleVideoUrl());
                 }}
               />
             </label>

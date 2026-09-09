@@ -1,19 +1,44 @@
 import { NextResponse } from "next/server";
-import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import {
   createDetectableSampleVideo,
   detectHighlightCandidates,
 } from "@/lib/scene-detect";
-import { ensureWorkDirs, UPLOAD_ROOT } from "@/lib/video";
+import { ensureWorkDirs, sweepTempFiles, UPLOAD_ROOT } from "@/lib/video";
+import {
+  isSamplePath,
+  MAX_UPLOAD_BYTES,
+  removePath,
+  saveUploadBytes,
+} from "@/lib/media-validate";
+import {
+  clientIp,
+  enforceContentLength,
+  logServerError,
+  publicErrorMessage,
+  publicErrorStatus,
+  rateLimit,
+  rateLimitResponse,
+  requireApiKey,
+  withHeavyJob,
+} from "@/lib/security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
+  let uploadPath: string | null = null;
   try {
+    const denied = requireApiKey(request);
+    if (denied) return denied;
+    const tooBig = enforceContentLength(request, MAX_UPLOAD_BYTES + 1024 * 1024);
+    if (tooBig) return tooBig;
+    const limited = rateLimit(`detect:${clientIp(request)}`, 8, 60_000);
+    if (!limited.ok) return rateLimitResponse(limited.retryAfterSec);
+
     await ensureWorkDirs();
+    await sweepTempFiles();
     const contentType = request.headers.get("content-type") ?? "";
     let file: FormDataEntryValue | null = null;
     if (contentType.includes("multipart/form-data")) {
@@ -24,24 +49,23 @@ export async function POST(request: Request) {
     let sourcePath = "";
     if (file && typeof file !== "string" && "arrayBuffer" in file) {
       const bytes = Buffer.from(await file.arrayBuffer());
-      if (bytes.byteLength === 0) {
-        return NextResponse.json({ error: "빈 영상 파일입니다." }, { status: 400 });
-      }
-      if (bytes.byteLength > 200 * 1024 * 1024) {
-        return NextResponse.json({ error: "영상은 200MB 이하만 지원합니다." }, { status: 400 });
-      }
-      sourcePath = path.join(UPLOAD_ROOT, `${randomUUID()}-detect.mp4`);
-      await fs.writeFile(sourcePath, bytes);
+      uploadPath = path.join(UPLOAD_ROOT, `${randomUUID()}-detect.mp4`);
+      await saveUploadBytes(bytes, uploadPath);
+      sourcePath = uploadPath;
     } else {
       sourcePath = path.join(UPLOAD_ROOT, "sample-match.mp4");
-      // Always refresh detectable sample so silence-gap demos stay accurate.
       await createDetectableSampleVideo(sourcePath);
     }
 
-    const result = await detectHighlightCandidates(sourcePath);
+    const result = await withHeavyJob(() => detectHighlightCandidates(sourcePath));
     return NextResponse.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "장면 감지 실패";
-    return NextResponse.json({ error: message }, { status: 400 });
+    logServerError("detect", error);
+    return NextResponse.json(
+      { error: publicErrorMessage(error, "장면 감지에 실패했습니다.") },
+      { status: publicErrorStatus(error) },
+    );
+  } finally {
+    if (uploadPath && !isSamplePath(uploadPath)) await removePath(uploadPath);
   }
 }

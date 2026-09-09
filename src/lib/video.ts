@@ -3,26 +3,41 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { VideoClipMarker } from "./types";
+import { removePath } from "./media-validate";
+import { SafeHttpError, logServerError } from "./security";
 
 export const UPLOAD_ROOT = path.join("/tmp", "fav-uploads");
 export const RENDER_ROOT = path.join("/tmp", "fav-renders");
+
+const SPAWN_TIMEOUT_MS = Number(process.env.FAV_FFMPEG_TIMEOUT_MS || 120_000);
 
 export async function ensureWorkDirs(): Promise<void> {
   await fs.mkdir(UPLOAD_ROOT, { recursive: true });
   await fs.mkdir(RENDER_ROOT, { recursive: true });
 }
 
-function run(cmd: string, args: string[]): Promise<void> {
+function run(cmd: string, args: string[], timeoutMs = SPAWN_TIMEOUT_MS): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
     let stderr = "";
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new SafeHttpError(408, "영상 처리 시간이 초과되었습니다."));
+    }, timeoutMs);
     child.stderr.on("data", (chunk: Buffer) => {
       stderr += chunk.toString();
     });
-    child.on("error", reject);
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
     child.on("close", (code) => {
+      clearTimeout(timer);
       if (code === 0) resolve();
-      else reject(new Error(`${cmd} failed (${code}): ${stderr.slice(-800)}`));
+      else {
+        logServerError("ffmpeg", `${cmd} ${args.join(" ")} => ${code}: ${stderr.slice(-800)}`);
+        reject(new SafeHttpError(400, "영상 처리에 실패했습니다."));
+      }
     });
   });
 }
@@ -41,10 +56,10 @@ export function validateClips(clips: VideoClipMarker[]): VideoClipMarker[] {
     .sort((a, b) => a.startSec - b.startSec);
 
   if (cleaned.length === 0) {
-    throw new Error("유효한 클립이 없습니다. 시작/종료 시간을 확인하세요.");
+    throw new SafeHttpError(400, "유효한 클립이 없습니다. 시작/종료 시간을 확인하세요.");
   }
   if (cleaned.length > 20) {
-    throw new Error("클립은 최대 20개까지 가능합니다.");
+    throw new SafeHttpError(400, "클립은 최대 20개까지 가능합니다.");
   }
   return cleaned;
 }
@@ -52,62 +67,88 @@ export function validateClips(clips: VideoClipMarker[]): VideoClipMarker[] {
 export async function renderHighlightReel(
   sourcePath: string,
   clips: VideoClipMarker[],
-): Promise<{ outputPath: string; clipCount: number }> {
+): Promise<{ outputPath: string; clipCount: number; workDir: string }> {
   await ensureWorkDirs();
   const valid = validateClips(clips);
   const jobId = randomUUID();
   const workDir = path.join(RENDER_ROOT, jobId);
   await fs.mkdir(workDir, { recursive: true });
 
-  const partPaths: string[] = [];
-  for (let i = 0; i < valid.length; i += 1) {
-    const clip = valid[i];
-    const part = path.join(workDir, `part-${String(i).padStart(2, "0")}.mp4`);
+  try {
+    const partPaths: string[] = [];
+    for (let i = 0; i < valid.length; i += 1) {
+      const clip = valid[i];
+      const part = path.join(workDir, `part-${String(i).padStart(2, "0")}.mp4`);
+      await run("ffmpeg", [
+        "-y",
+        "-ss",
+        String(clip.startSec),
+        "-to",
+        String(clip.endSec),
+        "-i",
+        sourcePath,
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "23",
+        "-c:a",
+        "aac",
+        "-movflags",
+        "+faststart",
+        part,
+      ]);
+      partPaths.push(part);
+    }
+
+    const listFile = path.join(workDir, "concat.txt");
+    const listBody = partPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join("\n");
+    await fs.writeFile(listFile, listBody, "utf8");
+
+    const outputPath = path.join(workDir, "highlights.mp4");
     await run("ffmpeg", [
       "-y",
-      "-ss",
-      String(clip.startSec),
-      "-to",
-      String(clip.endSec),
+      "-f",
+      "concat",
+      "-safe",
+      "0",
       "-i",
-      sourcePath,
-      "-c:v",
-      "libx264",
-      "-preset",
-      "veryfast",
-      "-crf",
-      "23",
-      "-c:a",
-      "aac",
-      "-movflags",
-      "+faststart",
-      part,
+      listFile,
+      "-c",
+      "copy",
+      outputPath,
     ]);
-    partPaths.push(part);
+
+    return { outputPath, clipCount: valid.length, workDir };
+  } catch (error) {
+    await removePath(workDir);
+    throw error;
   }
-
-  const listFile = path.join(workDir, "concat.txt");
-  const listBody = partPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join("\n");
-  await fs.writeFile(listFile, listBody, "utf8");
-
-  const outputPath = path.join(workDir, "highlights.mp4");
-  await run("ffmpeg", [
-    "-y",
-    "-f",
-    "concat",
-    "-safe",
-    "0",
-    "-i",
-    listFile,
-    "-c",
-    "copy",
-    outputPath,
-  ]);
-
-  return { outputPath, clipCount: valid.length };
 }
 
 export async function createSampleMatchVideo(targetPath: string): Promise<void> {
   const { createDetectableSampleVideo } = await import("./scene-detect");
   await createDetectableSampleVideo(targetPath);
+}
+
+/** Remove old render/upload artifacts older than ttlMs (default 1h). */
+export async function sweepTempFiles(ttlMs = 60 * 60 * 1000): Promise<void> {
+  const roots = [UPLOAD_ROOT, RENDER_ROOT];
+  const now = Date.now();
+  for (const root of roots) {
+    try {
+      const entries = await fs.readdir(/*turbopackIgnore: true*/ root, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.name === "sample-match.mp4") continue;
+        const full = `${root}/${entry.name}`;
+        const stat = await fs.stat(/*turbopackIgnore: true*/ full);
+        if (now - stat.mtimeMs > ttlMs) {
+          await removePath(full);
+        }
+      }
+    } catch {
+      // ignore missing dirs
+    }
+  }
 }

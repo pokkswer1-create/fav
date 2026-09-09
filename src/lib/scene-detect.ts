@@ -3,27 +3,39 @@ import { randomUUID } from "node:crypto";
 import { kindForPeakIntensity } from "./heatmap";
 import type { ClipKind, VideoClipMarker } from "./types";
 import { ensureWorkDirs } from "./video";
+import { SafeHttpError, logServerError } from "./security";
 
 export interface AudioPeak {
   timeSec: number;
   intensity: number;
 }
 
-function runCapture(cmd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+function runCapture(cmd: string, args: string[], timeoutMs = 60_000): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new SafeHttpError(408, "장면 감지 시간이 초과되었습니다."));
+    }, timeoutMs);
     child.stdout.on("data", (c: Buffer) => {
       stdout += c.toString();
     });
     child.stderr.on("data", (c: Buffer) => {
       stderr += c.toString();
     });
-    child.on("error", reject);
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
     child.on("close", (code) => {
+      clearTimeout(timer);
       if (code === 0 || code === 1) resolve({ stdout, stderr });
-      else reject(new Error(`${cmd} failed (${code}): ${stderr.slice(-800)}`));
+      else {
+        logServerError("scene-detect", `${cmd} failed (${code}): ${stderr.slice(-800)}`);
+        reject(new SafeHttpError(400, "장면 감지에 실패했습니다."));
+      }
     });
   });
 }
@@ -229,7 +241,10 @@ export async function createDetectableSampleVideo(targetPath: string): Promise<v
     child.on("error", reject);
     child.on("close", (code) => {
       if (code === 0) resolve();
-      else reject(new Error(`sample detect video failed: ${stderr.slice(-600)}`));
+      else {
+        logServerError("sample-video", stderr.slice(-600));
+        reject(new SafeHttpError(500, "데모 영상 생성에 실패했습니다."));
+      }
     });
   });
 }

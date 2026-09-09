@@ -19,19 +19,29 @@ export interface PlayerTrackResult {
   clips: VideoClipMarker[];
 }
 
-function runCapture(cmd: string, args: string[]): Promise<{ stdout: string; stderr: string; code: number }> {
+function runCapture(cmd: string, args: string[], timeoutMs = 60_000): Promise<{ stdout: string; stderr: string; code: number }> {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error("jersey OCR timed out"));
+    }, timeoutMs);
     child.stdout.on("data", (c: Buffer) => {
       stdout += c.toString();
     });
     child.stderr.on("data", (c: Buffer) => {
       stderr += c.toString();
     });
-    child.on("error", reject);
-    child.on("close", (code) => resolve({ stdout, stderr, code: code ?? 1 }));
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolve({ stdout, stderr, code: code ?? 1 });
+    });
   });
 }
 
@@ -171,7 +181,7 @@ export async function runJerseyOcr(
     String(intervalSec),
   ]);
   if (code !== 0) {
-    throw new Error(stderr || stdout || "jersey OCR failed");
+    throw new Error("jersey OCR failed");
   }
   const parsed = JSON.parse(stdout) as {
     error?: string;

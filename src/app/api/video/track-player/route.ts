@@ -1,12 +1,29 @@
 import { NextResponse } from "next/server";
-import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { demoMatch } from "@/lib/demo-match";
 import { trackPlayerInVideo } from "@/lib/player-track";
 import { createDetectableSampleVideo } from "@/lib/scene-detect";
 import type { PlayerStats } from "@/lib/types";
-import { ensureWorkDirs, UPLOAD_ROOT } from "@/lib/video";
+import { rosterSchema } from "@/lib/schemas";
+import { ensureWorkDirs, sweepTempFiles, UPLOAD_ROOT } from "@/lib/video";
+import {
+  isSamplePath,
+  MAX_UPLOAD_BYTES,
+  removePath,
+  saveUploadBytes,
+} from "@/lib/media-validate";
+import {
+  clientIp,
+  enforceContentLength,
+  logServerError,
+  publicErrorMessage,
+  publicErrorStatus,
+  rateLimit,
+  rateLimitResponse,
+  requireApiKey,
+  withHeavyJob,
+} from "@/lib/security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,11 +31,13 @@ export const dynamic = "force-dynamic";
 function findPlayer(number: number, rosterJson?: string): PlayerStats {
   if (rosterJson) {
     try {
-      const roster = JSON.parse(rosterJson) as PlayerStats[];
-      const hit = roster.find((p) => p.number === number);
-      if (hit) return hit;
+      const parsed = rosterSchema.safeParse(JSON.parse(rosterJson));
+      if (parsed.success) {
+        const hit = parsed.data.find((p) => p.number === number);
+        if (hit) return hit;
+      }
     } catch {
-      // fall through to demo roster
+      // fall through
     }
   }
   const all = [...demoMatch.home.players, ...demoMatch.away.players];
@@ -44,8 +63,17 @@ function findPlayer(number: number, rosterJson?: string): PlayerStats {
 }
 
 export async function POST(request: Request) {
+  let uploadPath: string | null = null;
   try {
+    const denied = requireApiKey(request);
+    if (denied) return denied;
+    const tooBig = enforceContentLength(request, MAX_UPLOAD_BYTES + 1024 * 1024);
+    if (tooBig) return tooBig;
+    const limited = rateLimit(`track:${clientIp(request)}`, 4, 60_000);
+    if (!limited.ok) return rateLimitResponse(limited.retryAfterSec);
+
     await ensureWorkDirs();
+    await sweepTempFiles();
     const contentType = request.headers.get("content-type") ?? "";
     let jerseyNumber = 7;
     let rosterJson: string | undefined;
@@ -59,7 +87,13 @@ export async function POST(request: Request) {
     } else if (contentType.includes("application/json")) {
       const body = (await request.json()) as { number?: number; roster?: PlayerStats[] };
       jerseyNumber = Number(body.number ?? 7);
-      if (body.roster) rosterJson = JSON.stringify(body.roster);
+      if (body.roster) {
+        const parsed = rosterSchema.safeParse(body.roster);
+        if (!parsed.success) {
+          return NextResponse.json({ error: "로스터 형식이 올바르지 않습니다." }, { status: 400 });
+        }
+        rosterJson = JSON.stringify(parsed.data);
+      }
     }
 
     if (!Number.isFinite(jerseyNumber) || jerseyNumber <= 0 || jerseyNumber >= 100) {
@@ -69,36 +103,35 @@ export async function POST(request: Request) {
     let sourcePath = "";
     if (file && typeof file !== "string" && "arrayBuffer" in file) {
       const bytes = Buffer.from(await file.arrayBuffer());
-      if (bytes.byteLength === 0) {
-        return NextResponse.json({ error: "빈 영상 파일입니다." }, { status: 400 });
-      }
-      if (bytes.byteLength > 200 * 1024 * 1024) {
-        return NextResponse.json({ error: "영상은 200MB 이하만 지원합니다." }, { status: 400 });
-      }
-      sourcePath = path.join(UPLOAD_ROOT, `${randomUUID()}-track.mp4`);
-      await fs.writeFile(sourcePath, bytes);
+      uploadPath = path.join(UPLOAD_ROOT, `${randomUUID()}-track.mp4`);
+      await saveUploadBytes(bytes, uploadPath);
+      sourcePath = uploadPath;
     } else {
       sourcePath = path.join(UPLOAD_ROOT, "sample-match.mp4");
       await createDetectableSampleVideo(sourcePath);
     }
 
     const player = findPlayer(jerseyNumber, rosterJson);
-    const result = await trackPlayerInVideo({
-      videoPath: sourcePath,
-      player,
-      intervalSec: 0.45,
-    });
+    const result = await withHeavyJob(() =>
+      trackPlayerInVideo({
+        videoPath: sourcePath,
+        player,
+        intervalSec: 0.45,
+      }),
+    );
 
     if (!result.clips.length) {
-      return NextResponse.json(
-        { error: `#${jerseyNumber} 선수 구간을 찾지 못했습니다.`, ...result },
-        { status: 404 },
-      );
+      return NextResponse.json({ error: `#${jerseyNumber} 선수 구간을 찾지 못했습니다.` }, { status: 404 });
     }
 
     return NextResponse.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "선수 트래킹 실패";
-    return NextResponse.json({ error: message }, { status: 400 });
+    logServerError("track-player", error);
+    return NextResponse.json(
+      { error: publicErrorMessage(error, "선수 트래킹에 실패했습니다.") },
+      { status: publicErrorStatus(error) },
+    );
+  } finally {
+    if (uploadPath && !isSamplePath(uploadPath)) await removePath(uploadPath);
   }
 }
