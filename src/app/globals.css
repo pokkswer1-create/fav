@@ -607,6 +607,14 @@ a {
   margin: 0.75rem 0 0;
 }
 
+.status-flash {
+  margin: 0 0 0.85rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(190, 255, 120, 0.35);
+  background: rgba(190, 255, 120, 0.08);
+  font-size: 0.88rem;
+}
+
 .clip-list li.is-invalid {
   border-color: rgba(255, 143, 143, 0.55);
 }
