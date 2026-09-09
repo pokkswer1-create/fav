@@ -180,7 +180,11 @@ export function AnalysisWorkbench() {
     syncJsonFromMatch(next);
     setReport(analyzeMatch(next));
     setError(null);
-    setStatus("데모 경기 로드");
+    setStatus("데모 경기 로드 완료 — 오른쪽 결과를 확인하세요");
+    // Keep the status near the action buttons so the click is obvious.
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
   }
 
   function saveLibrary() {
@@ -350,8 +354,8 @@ export function AnalysisWorkbench() {
               />
             </>
           )}
+          {status ? <p className="status-line status-line-top">{status}</p> : null}
           {error ? <p className="error-line">{error}</p> : null}
-          {status ? <p className="status-line">{status}</p> : null}
         </div>
 
         <div className="report-pane">
