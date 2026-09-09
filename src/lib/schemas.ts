@@ -49,8 +49,9 @@ export const clipKindSchema = z.enum([
 
 export const videoClipSchema = z.object({
   id: z.string().min(1).max(80),
-  startSec: z.number().min(0).max(86_400),
-  endSec: z.number().min(0).max(86_400),
+  // Allow out-of-range inputs — alignClipsToDuration clamps to media length.
+  startSec: z.number().finite().min(-86_400).max(172_800),
+  endSec: z.number().finite().min(-86_400).max(172_800),
   kind: clipKindSchema,
   label: z.string().max(80).optional().default(""),
   playerId: z.string().max(64).optional(),
@@ -58,6 +59,6 @@ export const videoClipSchema = z.object({
   playerNumber: z.number().int().min(0).max(99).optional(),
 });
 
-export const clipsPayloadSchema = z.array(videoClipSchema).max(20);
+export const clipsPayloadSchema = z.array(videoClipSchema).min(1).max(20);
 
 export const rosterSchema = z.array(playerStatsSchema).max(40);

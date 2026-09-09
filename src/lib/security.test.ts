@@ -53,6 +53,14 @@ describe("schema validation", () => {
     }));
     expect(clipsPayloadSchema.safeParse(clips).success).toBe(false);
   });
+
+  it("accepts out-of-range clip times for later alignment", () => {
+    const clips = [
+      { id: "1", startSec: -2, endSec: 3, kind: "kill" as const, label: "a" },
+      { id: "2", startSec: 18, endSec: 40, kind: "ace" as const, label: "b" },
+    ];
+    expect(clipsPayloadSchema.safeParse(clips).success).toBe(true);
+  });
 });
 
 describe("media magic bytes", () => {
