@@ -11,7 +11,7 @@ import { MatchSheetForm } from "./MatchSheetForm";
 import { WingLogo } from "./SiteHeader";
 import { getStoredMatch, saveStoredMatch, setEditorBridge, getScoutSession } from "@/lib/storage";
 import { buildMarkdownReport, downloadTextFile, openPrintableReport } from "@/lib/report";
-import { clipsFromScoutPoints } from "@/lib/scout";
+import { clipsFromScoutPoints, estimateMediaDurationFromScout } from "@/lib/scout";
 import { alignClipsToDuration } from "@/lib/clip-align";
 import { createDemoScoutSession } from "@/lib/demo-scout";
 import { ProStatsPanels } from "./ProStatsPanels";
@@ -214,9 +214,10 @@ export function AnalysisWorkbench() {
 
   function sendPlayerToEditor(p: PlayerRating) {
     const scout = resolveScout(match.id);
+    const duration = estimateMediaDurationFromScout(scout);
     const fromScout = alignClipsToDuration(
-      clipsFromScoutPoints(scout.points, 20, { onlyPlayerNumber: p.number }),
-      20,
+      clipsFromScoutPoints(scout.points, duration, { onlyPlayerNumber: p.number }),
+      duration,
     );
 
     setEditorBridge({
@@ -228,6 +229,7 @@ export function AnalysisWorkbench() {
       autoTrack: fromScout.length === 0,
       clips: fromScout.length ? fromScout : undefined,
       matchId: match.id,
+      mediaDurationSec: duration,
       message:
         fromScout.length > 0
           ? `#${p.number} 스카우트 타임스탬프 컷 (정확)`
@@ -238,10 +240,11 @@ export function AnalysisWorkbench() {
 
   function sendSuggestionsToEditor() {
     const scout = resolveScout(match.id);
-    const fromActions = filterActionsToClips(scout.actions ?? [], { durationSec: 20 });
+    const duration = estimateMediaDurationFromScout(scout);
+    const fromActions = filterActionsToClips(scout.actions ?? [], { durationSec: duration });
     const clips = alignClipsToDuration(
-      fromActions.length ? fromActions : clipsFromScoutPoints(scout.points, 20),
-      20,
+      fromActions.length ? fromActions : clipsFromScoutPoints(scout.points, duration),
+      duration,
     );
     setEditorBridge({
       version: 1,
@@ -250,6 +253,7 @@ export function AnalysisWorkbench() {
       clips: clips.length ? clips : undefined,
       autoTrack: false,
       matchId: match.id,
+      mediaDurationSec: duration,
       message: clips.length
         ? fromActions.length
           ? "프로 코딩 기반 전체 컷"
@@ -261,10 +265,11 @@ export function AnalysisWorkbench() {
 
   function sendSkillFilterToEditor(skill: "A" | "S" | "B") {
     const scout = resolveScout(match.id);
+    const duration = estimateMediaDurationFromScout(scout);
     const clips = filterActionsToClips(scout.actions ?? [], {
       skill,
       team: "home",
-      durationSec: 20,
+      durationSec: duration,
     });
     if (!clips.length) {
       setStatus(`${skill} 코딩 타임스탬프가 없습니다. 스카우트에서 프로 코딩을 하세요.`);
@@ -276,7 +281,7 @@ export function AnalysisWorkbench() {
       source: "analyze",
       clips,
       matchId: match.id,
-      mediaDurationSec: 20,
+      mediaDurationSec: duration,
       message: `필터 ${skill} 홈 클립`,
     });
     router.push("/editor?bridge=1");

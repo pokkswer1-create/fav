@@ -117,6 +117,8 @@ export async function POST(request: Request) {
         videoPath: sourcePath,
         player,
         intervalSec: 0.45,
+        // Uploaded match video: never invent clips from box-score.
+        allowStatsFallback: !uploadPath,
       }),
     );
 

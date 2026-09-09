@@ -82,3 +82,32 @@ describe("player tracking helpers", () => {
     expect(merged[0].endSec).toBeGreaterThanOrEqual(4);
   });
 });
+
+
+describe("stats fallback policy", () => {
+  it("keeps stats timeline available for demo, but OCR clips stay preferred", () => {
+    const stats = statsTimelineClips(
+      {
+        id: "p1",
+        name: "박세린",
+        number: 10,
+        position: "OPP",
+        attacks: 20,
+        kills: 2,
+        attackErrors: 1,
+        blocks: 1,
+        digs: 1,
+        aces: 1,
+        serveErrors: 0,
+        receptions: 0,
+        receptionErrors: 0,
+        sets: 0,
+        setErrors: 0,
+      },
+      60,
+    );
+    expect(stats.length).toBeGreaterThan(0);
+    // Route passes allowStatsFallback:false for uploads so these never replace OCR misses.
+    expect(stats.every((c) => c.endSec <= 60)).toBe(true);
+  });
+});

@@ -270,6 +270,27 @@ export function clipsFromScoutPoints(
   return clips;
 }
 
+
+/** Estimate a provisional media length from scout stamps (do not hardcode 20s). */
+export function estimateMediaDurationFromScout(
+  session: Pick<ScoutSession, "points" | "actions">,
+  fallbackSec = 600,
+): number {
+  const times: number[] = [];
+  for (const p of session.points ?? []) {
+    if (typeof p.videoTimeSec === "number" && Number.isFinite(p.videoTimeSec)) {
+      times.push(p.videoTimeSec);
+    }
+  }
+  for (const a of session.actions ?? []) {
+    if (typeof a.videoTimeSec === "number" && Number.isFinite(a.videoTimeSec)) {
+      times.push(a.videoTimeSec);
+    }
+  }
+  if (!times.length) return fallbackSec;
+  return Math.max(...times) + 30;
+}
+
 export function createScoutPoint(
   partial: Omit<ScoutPoint, "id" | "pointIndex"> & { pointIndex?: number },
 ): ScoutPoint {

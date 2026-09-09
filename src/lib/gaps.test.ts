@@ -11,7 +11,7 @@ import {
 } from "./library-bundle";
 import { filterConfidentDetections, scoreTrackQuality } from "./player-track";
 import { alignClipsToDuration, assertClipsWithinDuration } from "./clip-align";
-import { clipsFromScoutPoints, emptyPlayer, type ScoutSession } from "./scout";
+import { clipsFromScoutPoints, emptyPlayer, estimateMediaDurationFromScout, type ScoutSession } from "./scout";
 
 describe("video clock sync", () => {
   it("captures currentTime rounded for scout stamps", () => {
@@ -150,5 +150,49 @@ describe("tracking confidence + long media alignment", () => {
     const aligned = alignClipsToDuration(clipsFromScoutPoints(session.points, 90), 90);
     expect(aligned.length).toBe(3);
     expect(assertClipsWithinDuration(aligned, 90).ok).toBe(true);
+  });
+});
+
+
+describe("analyze bridge duration", () => {
+  it("does not clamp scout stamps to a hardcoded 20s window", () => {
+    const session: ScoutSession = {
+      id: "s",
+      matchId: "m",
+      title: "long",
+      createdAt: "2026-09-09T00:00:00.000Z",
+      updatedAt: "2026-09-09T00:00:00.000Z",
+      homeName: "FAV",
+      awayName: "SEO",
+      points: [
+        {
+          id: "p1",
+          setIndex: 0,
+          pointIndex: 0,
+          serving: "home",
+          winner: "home",
+          termination: "kill",
+          playerNumber: 7,
+          playerName: "김하늘",
+          videoTimeSec: 95,
+        },
+        {
+          id: "p2",
+          setIndex: 0,
+          pointIndex: 1,
+          serving: "home",
+          winner: "home",
+          termination: "ace",
+          playerNumber: 10,
+          playerName: "박세린",
+          videoTimeSec: 155,
+        },
+      ],
+    };
+    const duration = estimateMediaDurationFromScout(session);
+    expect(duration).toBeGreaterThanOrEqual(185);
+    const clips = alignClipsToDuration(clipsFromScoutPoints(session.points, duration), duration);
+    expect(clips).toHaveLength(2);
+    expect(assertClipsWithinDuration(clips, duration).ok).toBe(true);
   });
 });

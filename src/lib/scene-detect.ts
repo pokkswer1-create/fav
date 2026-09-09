@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { kindForPeakIntensity } from "./heatmap";
 import type { ClipKind, VideoClipMarker } from "./types";
 import { ensureWorkDirs } from "./video";
 import { SafeHttpError, logServerError } from "./security";
@@ -8,6 +7,24 @@ import { SafeHttpError, logServerError } from "./security";
 export interface AudioPeak {
   timeSec: number;
   intensity: number;
+}
+
+
+/** True when silence gaps look like real boundaries (not one continuous blob). */
+export function silenceWindowsAreUseful(
+  windows: Array<{ start: number; end: number }>,
+  durationSec: number,
+): boolean {
+  if (durationSec <= 0 || windows.length === 0) return false;
+  if (windows.length === 1) {
+    const span = windows[0].end - windows[0].start;
+    if (durationSec > 12 && span / durationSec >= 0.6) return false;
+  }
+  return true;
+}
+
+function detectTimeoutMs(durationSec: number): number {
+  return Math.min(300_000, Math.max(60_000, Math.round(durationSec * 1_000 + 30_000)));
 }
 
 function runCapture(cmd: string, args: string[], timeoutMs = 60_000): Promise<{ stdout: string; stderr: string }> {
@@ -104,7 +121,8 @@ export function peaksToClips(peaks: AudioPeak[], durationSec: number): VideoClip
 
   const clips: VideoClipMarker[] = [];
   for (const peak of sorted) {
-    const kind = kindForPeakIntensity(peak.intensity);
+    // Auto audio peaks cannot classify volleyball skills — only candidate windows.
+    const kind: ClipKind = peak.intensity >= 0.55 ? "rally" : "custom";
     const pad = kind === "rally" ? 3.5 : 2.2;
     let start = Math.max(0, peak.timeSec - pad * 0.45);
     let end = Math.min(durationSec, peak.timeSec + pad * 0.55);
@@ -131,9 +149,9 @@ function labelForKind(kind: ClipKind, index: number): string {
     block: "자동감지 블로킹",
     ace: "자동감지 에이스",
     dig: "자동감지 디그",
-    rally: "자동감지 랠리",
+    rally: "자동감지 랠리 후보",
     error: "자동감지 범실",
-    custom: "자동감지 하이라이트",
+    custom: "자동감지 후보",
   };
   return `${map[kind]} #${index}`;
 }
@@ -157,30 +175,41 @@ export async function detectHighlightCandidates(sourcePath: string): Promise<{
   peaks: AudioPeak[];
   clips: VideoClipMarker[];
   method: "silence-gaps" | "fallback-grid";
+  reliable: boolean;
+  warning?: string;
 }> {
   await ensureWorkDirs();
   const durationSec = await probeDuration(sourcePath);
-  const { stderr } = await runCapture("ffmpeg", [
-    "-i",
-    sourcePath,
-    "-af",
-    "silencedetect=noise=-35dB:d=0.35",
-    "-f",
-    "null",
-    "-",
-  ]);
+  const { stderr } = await runCapture(
+    "ffmpeg",
+    [
+      "-i",
+      sourcePath,
+      "-af",
+      "silencedetect=noise=-35dB:d=0.35",
+      "-f",
+      "null",
+      "-",
+    ],
+    detectTimeoutMs(durationSec),
+  );
 
   const windows = parseSilenceGaps(stderr, durationSec);
   let peaks = windowsToPeaks(windows, durationSec);
   let method: "silence-gaps" | "fallback-grid" = "silence-gaps";
+  let reliable = true;
+  let warning: string | undefined;
 
-  // Continuous tone / no useful gaps → place synthetic peaks for demo usability
-  if (peaks.length === 0 || (peaks.length === 1 && peaks[0].intensity < 0.5 && durationSec > 8)) {
+  // Continuous match audio / no useful gaps → grid candidates, but mark unreliable.
+  if (peaks.length === 0 || !silenceWindowsAreUseful(windows, durationSec)) {
     method = "fallback-grid";
+    reliable = false;
+    warning =
+      "연속 오디오라 무음갭 감지가 신뢰되지 않습니다. 스카우트 타임스탬프 컷을 사용하세요.";
     const anchors = [0.12, 0.38, 0.62, 0.85].map((r) => r * durationSec);
     peaks = anchors.map((t, i) => ({
       timeSec: t,
-      intensity: 0.9 - i * 0.12,
+      intensity: 0.7 - i * 0.05,
     }));
   }
 
@@ -189,6 +218,8 @@ export async function detectHighlightCandidates(sourcePath: string): Promise<{
     peaks,
     clips: peaksToClips(peaks, durationSec),
     method,
+    reliable,
+    warning,
   };
 }
 

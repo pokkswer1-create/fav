@@ -127,15 +127,29 @@ export function VideoEditorWorkbench() {
         clips?: VideoClipMarker[];
         method?: string;
         durationSec?: number;
+        reliable?: boolean;
+        warning?: string;
       };
       if (!res.ok) throw new Error(data.error ?? `감지 실패 (${res.status})`);
       if (!data.clips?.length) throw new Error("감지된 장면이 없습니다.");
       const duration = data.durationSec && data.durationSec > 0 ? data.durationSec : mediaDuration;
       setMediaDuration(duration);
       const aligned = alignClipsToDuration(data.clips, duration);
+      const methodLabel =
+        data.method === "silence-gaps" ? "오디오 피크" : "그리드 폴백";
+      const unreliable = data.reliable === false || data.method === "fallback-grid" || aligned.length <= 1;
+      if (unreliable) {
+        setClips([]);
+        setError(
+          data.warning ??
+            `자동 장면 감지가 신뢰되지 않습니다 (${methodLabel}, ${aligned.length}클립). 스카우트 타임스탬프 컷을 사용하세요.`,
+        );
+        setStatus(null);
+        return;
+      }
       setClips(aligned);
       setStatus(
-        `자동 장면 감지 ${aligned.length}클립 · ${data.method === "silence-gaps" ? "오디오 피크" : "그리드 폴백"} · ${duration.toFixed(1)}s`,
+        `자동 장면 감지 ${aligned.length}클립 · ${methodLabel} · ${duration.toFixed(1)}s`,
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "장면 감지 실패");
@@ -168,16 +182,27 @@ export function VideoEditorWorkbench() {
         notes?: string[];
       };
       if (!res.ok) throw new Error(data.error ?? `트래킹 실패 (${res.status})`);
-      if (!data.clips?.length) throw new Error("선수 구간을 찾지 못했습니다.");
+      if (!data.clips?.length) throw new Error("선수 구간을 찾지 못했습니다. 스카우트 타임스탬프 컷을 사용하세요.");
       const duration = data.durationSec && data.durationSec > 0 ? data.durationSec : mediaDuration;
       setMediaDuration(duration);
       const aligned = alignClipsToDuration(data.clips, duration);
-      setClips(aligned);
       setSelectedNumber(player.number);
       const q = typeof data.quality === "number" ? ` · 품질 ${(data.quality * 100).toFixed(0)}%` : "";
       const note = data.notes?.length ? ` · ${data.notes.join(" / ")}` : "";
+      const invented = data.method === "stats-timeline";
+      const lowQuality = typeof data.quality === "number" && data.quality < 0.45;
+      if (invented || lowQuality) {
+        setClips([]);
+        setError(
+          `#${data.playerNumber} 트래킹 신뢰도가 낮습니다 (${data.method}${q}). 스카우트 타임스탬프 컷을 사용하세요.${note}`,
+        );
+        setStatus(null);
+        return;
+      }
+      setClips(aligned);
+      const caution = data.method === "ocr+stats" ? " · 주의: OCR+스탯 혼합" : "";
       setStatus(
-        `#${data.playerNumber} ${data.playerName} 트래킹 ${aligned.length}클립 · ${data.method} · 감지 ${data.detections?.length ?? 0}프레임${q}${note} · 길이정렬 OK`,
+        `#${data.playerNumber} ${data.playerName} 트래킹 ${aligned.length}클립 · ${data.method} · 감지 ${data.detections?.length ?? 0}프레임${q}${note}${caution} · 길이정렬 OK`,
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "선수 트래킹 실패");

@@ -231,19 +231,36 @@ export async function trackPlayerInVideo(opts: {
   videoPath: string;
   player: Pick<PlayerStats, "id" | "name" | "number" | "kills" | "aces" | "blocks" | "digs">;
   intervalSec?: number;
+  /** When false (uploaded match video), never invent clips from box-score. Default true for demo sample. */
+  allowStatsFallback?: boolean;
 }): Promise<PlayerTrackResult> {
   const notes: string[] = [];
+  const allowStatsFallback = opts.allowStatsFallback !== false;
   const initialInterval = opts.intervalSec ?? 0.55;
-  let ocr = await runJerseyOcr(opts.videoPath, opts.player.number, initialInterval);
+  let ocr: { durationSec: number; detections: JerseyDetection[]; engine: string };
+  try {
+    ocr = await runJerseyOcr(opts.videoPath, opts.player.number, initialInterval);
+  } catch {
+    notes.push("OCR 엔진 실패 — 감지 결과 없음");
+    ocr = { durationSec: 0, detections: [], engine: "unavailable" };
+  }
   let detections = filterConfidentDetections(ocr.detections);
 
-  // Dense rescan only on short/medium media — long videos use stats fallback to stay usable.
+  // Dense rescan only on short/medium media.
   if (detections.length < 2 && ocr.durationSec >= 20 && ocr.durationSec < 50) {
     notes.push("희소 OCR → 고밀도 재스캔");
-    ocr = await runJerseyOcr(opts.videoPath, opts.player.number, 0.3);
-    detections = filterConfidentDetections(ocr.detections);
+    try {
+      ocr = await runJerseyOcr(opts.videoPath, opts.player.number, 0.3);
+      detections = filterConfidentDetections(ocr.detections);
+    } catch {
+      notes.push("고밀도 재스캔 실패");
+    }
   } else if (detections.length < 2 && ocr.durationSec >= 50) {
-    notes.push("긴 영상 OCR 희소 → 스탯 타임라인 폴백");
+    notes.push(
+      allowStatsFallback
+        ? "긴 영상 OCR 희소 → 스탯 타임라인 폴백"
+        : "긴 영상 OCR 희소 — 스카우트 타임스탬프를 사용하세요",
+    );
   }
 
   const ocrClips = clusterDetectionsToClips(detections, {
@@ -253,11 +270,18 @@ export async function trackPlayerInVideo(opts: {
     durationSec: ocr.durationSec,
   });
 
-  const statsClips = statsTimelineClips(opts.player as PlayerStats, ocr.durationSec);
-  const useStats = ocrClips.length < 2;
+  const useStats = allowStatsFallback && ocrClips.length < 2;
   if (useStats) notes.push("OCR 부족 → 스탯 타임라인 폴백");
+  if (!allowStatsFallback && ocrClips.length < 2) {
+    notes.push("업로드 영상에서는 스탯 폴백을 쓰지 않습니다 — 스카우트 컷을 권장");
+  }
+
   const merged = useStats
-    ? mergePlayerClips(ocrClips, statsClips, ocr.durationSec)
+    ? mergePlayerClips(
+        ocrClips,
+        statsTimelineClips(opts.player as PlayerStats, ocr.durationSec),
+        ocr.durationSec,
+      )
     : ocrClips;
   const clips = alignClipsToDuration(merged, ocr.durationSec);
   const quality = scoreTrackQuality({
@@ -272,7 +296,7 @@ export async function trackPlayerInVideo(opts: {
     playerName: opts.player.name,
     playerNumber: opts.player.number,
     durationSec: ocr.durationSec,
-    method: ocrClips.length && useStats ? "ocr+stats" : ocrClips.length ? "ocr" : "stats-timeline",
+    method: ocrClips.length && useStats ? "ocr+stats" : ocrClips.length ? "ocr" : useStats ? "stats-timeline" : "ocr",
     detections,
     clips,
     quality,
