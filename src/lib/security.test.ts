@@ -74,3 +74,27 @@ describe("media magic bytes", () => {
     expect(looksLikeVideoContainer(Buffer.from("not-a-video-file!!!!"))).toBe(false);
   });
 });
+
+describe("api access roles", () => {
+  it("treats default key as write and blocks readonly writes", async () => {
+    const { resolveApiAccess, requireWriteAccess } = await import("./security");
+    expect(resolveApiAccess(new Request("http://localhost", {
+      headers: { "x-fav-api-key": "fav-local-dev-key" },
+    }))).toBe("write");
+
+    const prev = process.env.FAV_READONLY_API_KEY;
+    process.env.FAV_READONLY_API_KEY = "viewer-key";
+    try {
+      expect(resolveApiAccess(new Request("http://localhost", {
+        headers: { "x-fav-api-key": "viewer-key" },
+      }))).toBe("read");
+      const denied = requireWriteAccess(new Request("http://localhost", {
+        headers: { "x-fav-api-key": "viewer-key" },
+      }));
+      expect(denied?.status).toBe(403);
+    } finally {
+      if (prev == null) delete process.env.FAV_READONLY_API_KEY;
+      else process.env.FAV_READONLY_API_KEY = prev;
+    }
+  });
+});

@@ -193,9 +193,35 @@ export async function detectHighlightCandidates(sourcePath: string): Promise<{
 }
 
 /** Build a sample match video with quiet gaps + loud spikes + jersey number overlays. */
-export async function createDetectableSampleVideo(targetPath: string): Promise<void> {
+export async function createDetectableSampleVideo(
+  targetPath: string,
+  opts?: { durationSec?: number },
+): Promise<void> {
   await ensureWorkDirs();
+  const duration = Math.max(8, Math.min(opts?.durationSec ?? 20, 180));
   const font = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
+
+  // Scale highlight windows across the media duration (same jersey sequence).
+  const windows = [
+    { num: "7", a: duration * 0.06, b: duration * 0.21 },
+    { num: "10", a: duration * 0.34, b: duration * 0.55 },
+    { num: "4", a: duration * 0.67, b: duration * 0.88 },
+  ];
+  const quietExpr = windows
+    .map((w, i) => {
+      const prev = i === 0 ? 0 : windows[i - 1].b;
+      return `between(t,${prev.toFixed(2)},${w.a.toFixed(2)})`;
+    })
+    .concat([`between(t,${windows[windows.length - 1].b.toFixed(2)},${duration})`])
+    .join("+");
+  const loudExpr = windows.map((w) => `between(t,${w.a.toFixed(2)},${w.b.toFixed(2)})`).join("+");
+  const drawTexts = windows
+    .map((w, i) => {
+      const size = w.num.length > 1 ? 120 : 140;
+      const sep = i === windows.length - 1 ? "[v]" : "";
+      return `drawtext=fontfile=${font}:text='${w.num}':fontsize=${size}:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-20:enable='between(t,${w.a.toFixed(2)},${w.b.toFixed(2)})'${sep}`;
+    })
+    .join(",");
 
   await new Promise<void>((resolve, reject) => {
     const child = spawn(
@@ -205,26 +231,26 @@ export async function createDetectableSampleVideo(targetPath: string): Promise<v
         "-f",
         "lavfi",
         "-i",
-        "color=c=0x0B1F17:s=1280x720:d=20",
+        `color=c=0x0B1F17:s=1280x720:d=${duration}`,
         "-f",
         "lavfi",
         "-i",
-        "sine=frequency=660:duration=20",
+        `sine=frequency=660:duration=${duration}`,
         "-filter_complex",
         [
           "[0:v]drawbox=x=80:y=300:w=1120:h=8:color=0xFF2D95:t=fill",
           "drawbox=x=520:y=220:w=240:h=280:color=0x1a1a1a@0.9:t=fill",
-          `drawtext=fontfile=${font}:text='7':fontsize=140:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-20:enable='between(t,1.2,4.2)'`,
-          `drawtext=fontfile=${font}:text='10':fontsize=120:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-20:enable='between(t,6.8,11.0)'`,
-          `drawtext=fontfile=${font}:text='4':fontsize=140:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-20:enable='between(t,13.5,17.5)'[v]`,
+          drawTexts,
         ].join(",") +
-          ";[1:a]volume=enable='between(t,0,1.2)+between(t,4.2,6.8)+between(t,11.0,13.5)+between(t,17.5,20)':volume=0.001,volume=enable='between(t,1.2,4.2)+between(t,6.8,11.0)+between(t,13.5,17.5)':volume=1[a]",
+          `;[1:a]volume=enable='${quietExpr}':volume=0.001,volume=enable='${loudExpr}':volume=1[a]`,
         "-map",
         "[v]",
         "-map",
         "[a]",
         "-c:v",
         "libx264",
+        "-preset",
+        "ultrafast",
         "-c:a",
         "aac",
         "-shortest",

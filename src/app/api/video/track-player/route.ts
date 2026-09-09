@@ -21,7 +21,7 @@ import {
   publicErrorStatus,
   rateLimit,
   rateLimitResponse,
-  requireApiKey,
+  requireWriteAccess,
   withHeavyJob,
 } from "@/lib/security";
 
@@ -65,7 +65,7 @@ function findPlayer(number: number, rosterJson?: string): PlayerStats {
 export async function POST(request: Request) {
   let uploadPath: string | null = null;
   try {
-    const denied = requireApiKey(request);
+    const denied = requireWriteAccess(request);
     if (denied) return denied;
     const tooBig = enforceContentLength(request, MAX_UPLOAD_BYTES + 1024 * 1024);
     if (tooBig) return tooBig;

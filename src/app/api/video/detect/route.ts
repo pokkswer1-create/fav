@@ -20,7 +20,7 @@ import {
   publicErrorStatus,
   rateLimit,
   rateLimitResponse,
-  requireApiKey,
+  requireWriteAccess,
   withHeavyJob,
 } from "@/lib/security";
 
@@ -30,7 +30,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   let uploadPath: string | null = null;
   try {
-    const denied = requireApiKey(request);
+    const denied = requireWriteAccess(request);
     if (denied) return denied;
     const tooBig = enforceContentLength(request, MAX_UPLOAD_BYTES + 1024 * 1024);
     if (tooBig) return tooBig;

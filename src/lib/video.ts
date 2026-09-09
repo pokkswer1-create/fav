@@ -135,7 +135,10 @@ export async function renderHighlightReel(
 
 export async function createSampleMatchVideo(targetPath: string): Promise<void> {
   const { createDetectableSampleVideo } = await import("./scene-detect");
-  await createDetectableSampleVideo(targetPath);
+  const durationSec = Number(process.env.FAV_SAMPLE_DURATION_SEC || 20);
+  await createDetectableSampleVideo(targetPath, {
+    durationSec: Number.isFinite(durationSec) ? durationSec : 20,
+  });
 }
 
 /** Remove old render/upload artifacts older than ttlMs (default 1h). */

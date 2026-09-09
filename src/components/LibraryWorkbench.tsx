@@ -1,15 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createDemoScoutSession } from "@/lib/demo-scout";
 import { analyzeMatch, scoreLabel } from "@/lib/analysis";
 import { buildMatchFromScout, clipsFromScoutPoints, type ScoutSession } from "@/lib/scout";
 import { demoMatch } from "@/lib/demo-match";
 import {
+  applyLibraryBundle,
+  buildCurrentLibraryBundle,
   deleteStoredMatch,
+  downloadLibraryExport,
+  importLibraryFromText,
   listScoutSessions,
   listStoredMatches,
+  restoreLibraryFromIdb,
   saveScoutSession,
   saveStoredMatch,
   setEditorBridge,
@@ -17,11 +22,16 @@ import {
 } from "@/lib/storage";
 import { alignClipsToDuration } from "@/lib/clip-align";
 import { buildMarkdownReport, downloadTextFile, openPrintableReport } from "@/lib/report";
+import { apiFetch } from "@/lib/api-client";
+import type { LibraryBundle } from "@/lib/library-bundle";
 
 export function LibraryWorkbench() {
   const router = useRouter();
+  const fileRef = useRef<HTMLInputElement | null>(null);
   const [matches, setMatches] = useState<StoredMatch[]>([]);
   const [scouts, setScouts] = useState<ScoutSession[]>([]);
+  const [status, setStatus] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   function refresh() {
     setMatches(listStoredMatches());
@@ -29,7 +39,10 @@ export function LibraryWorkbench() {
   }
 
   useEffect(() => {
-    refresh();
+    void (async () => {
+      await restoreLibraryFromIdb();
+      refresh();
+    })();
   }, []);
 
   function openAnalyze(id: string) {
@@ -78,6 +91,47 @@ export function LibraryWorkbench() {
       notes: "demo seed",
     });
     refresh();
+    setStatus("데모 시드 완료");
+  }
+
+  async function pushServerBackup() {
+    try {
+      setBusy(true);
+      setStatus(null);
+      const bundle = buildCurrentLibraryBundle();
+      const res = await apiFetch("/api/library", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ bundle }),
+      });
+      const data = (await res.json()) as { error?: string; matchCount?: number; scoutCount?: number };
+      if (!res.ok) throw new Error(data.error ?? "서버 백업 실패");
+      setStatus(`서버 백업 완료 · 경기 ${data.matchCount} · 스카우트 ${data.scoutCount}`);
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : "서버 백업 실패");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function pullServerBackup() {
+    try {
+      setBusy(true);
+      setStatus(null);
+      const res = await apiFetch("/api/library");
+      const data = (await res.json()) as { error?: string; bundle?: LibraryBundle };
+      if (!res.ok) throw new Error(data.error ?? "서버 불러오기 실패");
+      if (!data.bundle) throw new Error("빈 백업");
+      applyLibraryBundle(data.bundle, "merge");
+      refresh();
+      setStatus(
+        `서버 병합 완료 · 경기 ${data.bundle.matches.length} · 스카우트 ${data.bundle.scouts.length}`,
+      );
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : "서버 불러오기 실패");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -85,7 +139,9 @@ export function LibraryWorkbench() {
       <section className="workbench-intro">
         <p className="eyebrow">LIBRARY</p>
         <h1>경기 보관함</h1>
-        <p className="lede">저장한 경기·스카우트를 다시 열고, 리포트를 내보내거나 영상 컷으로 보냅니다.</p>
+        <p className="lede">
+          localStorage + IndexedDB + JSON 내보내기/가져오기 + 서버 백업으로 기기 간 이동이 가능합니다.
+        </p>
       </section>
 
       <div className="pane-actions">
@@ -95,7 +151,39 @@ export function LibraryWorkbench() {
         <button type="button" className="btn ghost" onClick={refresh}>
           새로고침
         </button>
+        <button type="button" className="btn ghost" onClick={() => downloadLibraryExport()}>
+          JSON 내보내기
+        </button>
+        <button type="button" className="btn ghost" onClick={() => fileRef.current?.click()}>
+          JSON 가져오기
+        </button>
+        <button type="button" className="btn ghost" disabled={busy} onClick={pushServerBackup}>
+          서버 백업
+        </button>
+        <button type="button" className="btn ghost" disabled={busy} onClick={pullServerBackup}>
+          서버에서 병합
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="application/json,.json"
+          hidden
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            const text = await file.text();
+            try {
+              const bundle = importLibraryFromText(text, "merge");
+              refresh();
+              setStatus(`가져오기 완료 · 경기 ${bundle.matches.length}`);
+            } catch (err) {
+              setStatus(err instanceof Error ? err.message : "가져오기 실패");
+            }
+            e.target.value = "";
+          }}
+        />
       </div>
+      {status ? <p className="status-line">{status}</p> : null}
 
       <section className="library-grid">
         <div>
@@ -162,4 +250,3 @@ export function LibraryWorkbench() {
     </div>
   );
 }
-

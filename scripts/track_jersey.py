@@ -47,24 +47,49 @@ def detect(video_path: str, target: int, interval: float) -> dict:
         # Focus on torso / center-court where jersey digits are drawn in demo.
         y0, y1 = int(h * 0.28), int(h * 0.72)
         x0, x1 = int(w * 0.28), int(w * 0.72)
-        roi = frame[y0:y1, x0:x1]
-        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-        gray = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
-        _, thr = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        rois = [
+            frame[y0:y1, x0:x1],
+            frame[int(h * 0.2) : int(h * 0.8), int(w * 0.15) : int(w * 0.85)],
+            frame[int(h * 0.35) : int(h * 0.65), int(w * 0.35) : int(w * 0.65)],
+        ]
+        numbers: set[int] = set()
+        best_conf = 0.0
         configs = [
             "--psm 7 -c tessedit_char_whitelist=0123456789",
             "--psm 6 -c tessedit_char_whitelist=0123456789",
             "--psm 8 -c tessedit_char_whitelist=0123456789",
         ]
-        numbers: set[int] = set()
-        for cfg in configs:
-            text = pytesseract.image_to_string(thr, config=cfg)
-            numbers |= parse_numbers(text)
+        for roi in rois:
+            gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+            gray = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+            blur = cv2.GaussianBlur(gray, (3, 3), 0)
+            variants = [
+                cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
+                cv2.adaptiveThreshold(
+                    blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 5
+                ),
+            ]
+            for thr in variants:
+                for cfg in configs:
+                    text = pytesseract.image_to_string(thr, config=cfg)
+                    found = parse_numbers(text)
+                    numbers |= found
+                    if target in found:
+                        best_conf = max(best_conf, 0.85)
+                        break
+                if target in numbers:
+                    break
             if target in numbers:
                 break
 
         if target in numbers:
-            detections.append({"timeSec": round(float(t), 2), "number": target, "confidence": 0.8})
+            detections.append(
+                {
+                    "timeSec": round(float(t), 2),
+                    "number": target,
+                    "confidence": best_conf or 0.7,
+                }
+            )
 
         idx += 1
 

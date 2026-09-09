@@ -18,6 +18,31 @@ export interface PlayerTrackResult {
   method: "ocr" | "stats-timeline" | "ocr+stats";
   detections: JerseyDetection[];
   clips: VideoClipMarker[];
+  quality: number;
+  notes: string[];
+}
+
+/** Drop weak OCR hits so sparse noise does not invent clips. */
+export function filterConfidentDetections(
+  detections: JerseyDetection[],
+  minConfidence = 0.45,
+): JerseyDetection[] {
+  return detections.filter((d) => {
+    if (typeof d.confidence !== "number") return true;
+    return d.confidence >= minConfidence;
+  });
+}
+
+/** 0..1 quality based on detection density and usable clips. */
+export function scoreTrackQuality(opts: {
+  detections: number;
+  durationSec: number;
+  clips: number;
+}): number {
+  if (opts.durationSec <= 0) return 0;
+  const density = opts.detections / Math.max(1, opts.durationSec / 5);
+  const clipScore = Math.min(1, opts.clips / 3);
+  return Number(Math.max(0, Math.min(1, density * 0.55 + clipScore * 0.45)).toFixed(2));
 }
 
 function runCapture(cmd: string, args: string[], timeoutMs = 60_000): Promise<{ stdout: string; stderr: string; code: number }> {
@@ -44,6 +69,12 @@ function runCapture(cmd: string, args: string[], timeoutMs = 60_000): Promise<{ 
       resolve({ stdout, stderr, code: code ?? 1 });
     });
   });
+}
+
+function ocrTimeoutForInterval(intervalSec: number): number {
+  // Longer / denser scans need more wall time.
+  const approxFrames = Math.ceil(120 / Math.max(0.2, intervalSec));
+  return Math.min(240_000, 45_000 + approxFrames * 900);
 }
 
 export function clusterDetectionsToClips(
@@ -174,13 +205,11 @@ export async function runJerseyOcr(
   intervalSec = 0.5,
 ): Promise<{ durationSec: number; detections: JerseyDetection[]; engine: string }> {
   const script = path.join(process.cwd(), "scripts", "track_jersey.py");
-  const { stdout, stderr, code } = await runCapture("python3", [
-    script,
-    videoPath,
-    String(jerseyNumber),
-    "--interval",
-    String(intervalSec),
-  ]);
+  const { stdout, stderr, code } = await runCapture(
+    "python3",
+    [script, videoPath, String(jerseyNumber), "--interval", String(intervalSec)],
+    ocrTimeoutForInterval(intervalSec),
+  );
   if (code !== 0) {
     throw new Error("jersey OCR failed");
   }
@@ -203,8 +232,21 @@ export async function trackPlayerInVideo(opts: {
   player: Pick<PlayerStats, "id" | "name" | "number" | "kills" | "aces" | "blocks" | "digs">;
   intervalSec?: number;
 }): Promise<PlayerTrackResult> {
-  const ocr = await runJerseyOcr(opts.videoPath, opts.player.number, opts.intervalSec ?? 0.5);
-  const ocrClips = clusterDetectionsToClips(ocr.detections, {
+  const notes: string[] = [];
+  const initialInterval = opts.intervalSec ?? 0.55;
+  let ocr = await runJerseyOcr(opts.videoPath, opts.player.number, initialInterval);
+  let detections = filterConfidentDetections(ocr.detections);
+
+  // Dense rescan only on short/medium media — long videos use stats fallback to stay usable.
+  if (detections.length < 2 && ocr.durationSec >= 20 && ocr.durationSec < 50) {
+    notes.push("희소 OCR → 고밀도 재스캔");
+    ocr = await runJerseyOcr(opts.videoPath, opts.player.number, 0.3);
+    detections = filterConfidentDetections(ocr.detections);
+  } else if (detections.length < 2 && ocr.durationSec >= 50) {
+    notes.push("긴 영상 OCR 희소 → 스탯 타임라인 폴백");
+  }
+
+  const ocrClips = clusterDetectionsToClips(detections, {
     playerNumber: opts.player.number,
     playerName: opts.player.name,
     playerId: opts.player.id,
@@ -213,10 +255,17 @@ export async function trackPlayerInVideo(opts: {
 
   const statsClips = statsTimelineClips(opts.player as PlayerStats, ocr.durationSec);
   const useStats = ocrClips.length < 2;
+  if (useStats) notes.push("OCR 부족 → 스탯 타임라인 폴백");
   const merged = useStats
     ? mergePlayerClips(ocrClips, statsClips, ocr.durationSec)
     : ocrClips;
   const clips = alignClipsToDuration(merged, ocr.durationSec);
+  const quality = scoreTrackQuality({
+    detections: detections.length,
+    durationSec: ocr.durationSec,
+    clips: clips.length,
+  });
+  if (quality < 0.45) notes.push("신뢰도 낮음 — 스카우트 타임스탬프 컷을 권장");
 
   return {
     playerId: opts.player.id,
@@ -224,7 +273,9 @@ export async function trackPlayerInVideo(opts: {
     playerNumber: opts.player.number,
     durationSec: ocr.durationSec,
     method: ocrClips.length && useStats ? "ocr+stats" : ocrClips.length ? "ocr" : "stats-timeline",
-    detections: ocr.detections,
+    detections,
     clips,
+    quality,
+    notes,
   };
 }

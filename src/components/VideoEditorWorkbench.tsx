@@ -90,8 +90,12 @@ export function VideoEditorWorkbench() {
       return;
     }
     if (payload.playerNumber) setSelectedNumber(payload.playerNumber);
+    if (payload.mediaDurationSec && payload.mediaDurationSec > 0) {
+      setMediaDuration(payload.mediaDurationSec);
+    }
+    const duration = payload.mediaDurationSec && payload.mediaDurationSec > 0 ? payload.mediaDurationSec : mediaDuration;
     if (payload.clips?.length) {
-      const aligned = alignClipsToDuration(payload.clips, mediaDuration);
+      const aligned = alignClipsToDuration(payload.clips, duration);
       setClips(aligned);
       setStatus(payload.message ?? `브리지 클립 ${aligned.length}개 로드`);
     } else if (payload.autoTrack && payload.playerNumber) {
@@ -160,6 +164,8 @@ export function VideoEditorWorkbench() {
         playerName?: string;
         playerNumber?: number;
         durationSec?: number;
+        quality?: number;
+        notes?: string[];
       };
       if (!res.ok) throw new Error(data.error ?? `트래킹 실패 (${res.status})`);
       if (!data.clips?.length) throw new Error("선수 구간을 찾지 못했습니다.");
@@ -168,8 +174,10 @@ export function VideoEditorWorkbench() {
       const aligned = alignClipsToDuration(data.clips, duration);
       setClips(aligned);
       setSelectedNumber(player.number);
+      const q = typeof data.quality === "number" ? ` · 품질 ${(data.quality * 100).toFixed(0)}%` : "";
+      const note = data.notes?.length ? ` · ${data.notes.join(" / ")}` : "";
       setStatus(
-        `#${data.playerNumber} ${data.playerName} 트래킹 ${aligned.length}클립 · ${data.method} · 감지 ${data.detections?.length ?? 0}프레임 · 길이정렬 OK`,
+        `#${data.playerNumber} ${data.playerName} 트래킹 ${aligned.length}클립 · ${data.method} · 감지 ${data.detections?.length ?? 0}프레임${q}${note} · 길이정렬 OK`,
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "선수 트래킹 실패");

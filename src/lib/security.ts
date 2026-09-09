@@ -6,14 +6,16 @@ export function getExpectedApiKey(): string {
   return process.env.FAV_API_KEY?.trim() || DEFAULT_DEV_KEY;
 }
 
-export function clientIp(request: Request): string {
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0]?.trim() || "unknown";
-  return request.headers.get("x-real-ip") || "local";
+export function getReadonlyApiKey(): string | null {
+  const key = process.env.FAV_READONLY_API_KEY?.trim();
+  return key || null;
 }
 
-export function requireApiKey(request: Request): NextResponse | null {
-  const expected = getExpectedApiKey();
+export type ApiAccess = "write" | "read";
+
+export function resolveApiAccess(request: Request): ApiAccess | null {
+  const writeKey = getExpectedApiKey();
+  const readKey = getReadonlyApiKey();
   const headerKey =
     request.headers.get("x-fav-api-key") ||
     request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
@@ -21,8 +23,32 @@ export function requireApiKey(request: Request): NextResponse | null {
   const url = new URL(request.url);
   const queryKey = url.searchParams.get("key") || "";
   const provided = headerKey || queryKey;
-  if (provided !== expected) {
+  if (provided && provided === writeKey) return "write";
+  if (provided && readKey && provided === readKey) return "read";
+  return null;
+}
+
+export function clientIp(request: Request): string {
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (forwarded) return forwarded.split(",")[0]?.trim() || "unknown";
+  return request.headers.get("x-real-ip") || "local";
+}
+
+export function requireApiKey(request: Request): NextResponse | null {
+  if (!resolveApiAccess(request)) {
     return NextResponse.json({ error: "인증이 필요합니다." }, { status: 401 });
+  }
+  return null;
+}
+
+/** Write endpoints reject readonly keys. */
+export function requireWriteAccess(request: Request): NextResponse | null {
+  const access = resolveApiAccess(request);
+  if (!access) {
+    return NextResponse.json({ error: "인증이 필요합니다." }, { status: 401 });
+  }
+  if (access !== "write") {
+    return NextResponse.json({ error: "쓰기 권한이 없습니다." }, { status: 403 });
   }
   return null;
 }
@@ -72,6 +98,10 @@ export async function withHeavyJob<T>(fn: () => Promise<T>): Promise<T> {
   } finally {
     heavyJobs -= 1;
   }
+}
+
+export function getHeavyJobStats(): { active: number; max: number } {
+  return { active: heavyJobs, max: HEAVY_MAX };
 }
 
 export class SafeHttpError extends Error {
