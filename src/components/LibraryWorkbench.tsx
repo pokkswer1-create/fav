@@ -4,7 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createDemoScoutSession } from "@/lib/demo-scout";
 import { analyzeMatch, scoreLabel } from "@/lib/analysis";
-import { buildMatchFromScout, clipsFromScoutPoints, type ScoutSession } from "@/lib/scout";
+import {
+  buildMatchFromScout,
+  clipsFromScoutPoints,
+  estimateMediaDurationFromScout,
+  type ScoutSession,
+} from "@/lib/scout";
 import { demoMatch } from "@/lib/demo-match";
 import {
   applyLibraryBundle,
@@ -62,7 +67,8 @@ export function LibraryWorkbench() {
   }
 
   function sendScoutClips(s: ScoutSession) {
-    const clips = alignClipsToDuration(clipsFromScoutPoints(s.points, 20), 20);
+    const duration = estimateMediaDurationFromScout(s);
+    const clips = alignClipsToDuration(clipsFromScoutPoints(s.points, duration), duration);
     if (!clips.length) return;
     setEditorBridge({
       version: 1,
@@ -70,6 +76,7 @@ export function LibraryWorkbench() {
       source: "library",
       clips,
       matchId: s.matchId,
+      mediaDurationSec: duration,
       message: "보관함 스카우트 타임스탬프",
     });
     router.push("/editor?bridge=1");

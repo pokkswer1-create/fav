@@ -236,7 +236,8 @@ export async function trackPlayerInVideo(opts: {
 }): Promise<PlayerTrackResult> {
   const notes: string[] = [];
   const allowStatsFallback = opts.allowStatsFallback !== false;
-  const initialInterval = opts.intervalSec ?? 0.55;
+  // Uploaded match video: sparse scan only — OCR is unreliable at court distance.
+  const initialInterval = opts.intervalSec ?? (allowStatsFallback ? 0.55 : 1.2);
   let ocr: { durationSec: number; detections: JerseyDetection[]; engine: string };
   try {
     ocr = await runJerseyOcr(opts.videoPath, opts.player.number, initialInterval);
@@ -246,8 +247,13 @@ export async function trackPlayerInVideo(opts: {
   }
   let detections = filterConfidentDetections(ocr.detections);
 
-  // Dense rescan only on short/medium media.
-  if (detections.length < 2 && ocr.durationSec >= 20 && ocr.durationSec < 50) {
+  // Dense rescan only for demo/sample short media when stats fallback is allowed.
+  if (
+    allowStatsFallback &&
+    detections.length < 2 &&
+    ocr.durationSec >= 20 &&
+    ocr.durationSec < 50
+  ) {
     notes.push("희소 OCR → 고밀도 재스캔");
     try {
       ocr = await runJerseyOcr(opts.videoPath, opts.player.number, 0.3);

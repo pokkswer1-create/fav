@@ -116,8 +116,8 @@ export async function POST(request: Request) {
       trackPlayerInVideo({
         videoPath: sourcePath,
         player,
-        intervalSec: 0.45,
-        // Uploaded match video: never invent clips from box-score.
+        // Demo sample: denser OCR. Uploads: sparse + no stats invention.
+        intervalSec: uploadPath ? 1.5 : 0.45,
         allowStatsFallback: !uploadPath,
       }),
     );
