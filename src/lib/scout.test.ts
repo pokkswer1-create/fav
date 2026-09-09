@@ -6,6 +6,7 @@ import {
 } from "./clip-align";
 import {
   analyzeSideOut,
+  appendCodedAction,
   buildMatchFromScout,
   clipsFromScoutPoints,
   computeSetScores,
@@ -137,5 +138,42 @@ describe("point scouting engine", () => {
     const check = assertClipsWithinDuration(alignClipsToDuration(clips, 20), 20);
     expect(check.ok).toBe(true);
     expect(clips.every((c) => c.playerNumber === 7)).toBe(true);
+  });
+});
+
+describe("pro coded actions", () => {
+  it("appends coded action and rotates on side-out win", () => {
+    const base: ScoutSession = {
+      id: "code-1",
+      matchId: "m1",
+      title: "t",
+      createdAt: "t",
+      updatedAt: "t",
+      homeName: "FAV",
+      awayName: "SEO",
+      points: [],
+      actions: [],
+      homeRotation: 1,
+      awayRotation: 1,
+    };
+    const next = appendCodedAction(
+      base,
+      {
+        setIndex: 0,
+        team: "home",
+        skill: "A",
+        effect: "#",
+        playerNumber: 7,
+        endZone: 4,
+        combination: "X5",
+        videoTimeSec: 5,
+        pointEnding: true,
+      },
+      { winner: "home", serving: "away" },
+    );
+    expect(next.actions).toHaveLength(1);
+    expect(next.points).toHaveLength(1);
+    expect(next.points[0].termination).toBe("kill");
+    expect(next.homeRotation).toBe(2);
   });
 });
