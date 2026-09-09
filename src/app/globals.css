@@ -628,13 +628,38 @@ a {
   min-width: 0;
 }
 
-.sheet-meta,
-.sheet-team-head {
+.sheet-meta {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.65rem;
   align-items: end;
   min-width: 0;
+}
+
+.sheet-team-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 0.85rem;
+  align-items: end;
+  min-width: 0;
+}
+
+.sheet-team-head > label:not(.check) {
+  flex: 1 1 9rem;
+  min-width: 0;
+}
+
+.sheet-team-head .check {
+  flex: 0 0 auto;
+  padding: 0.45rem 0.2rem;
+  white-space: nowrap;
+}
+
+.sheet-side-title {
+  margin: 0.4rem 0 0;
+  color: var(--lime);
+  font-size: 0.9rem;
+  letter-spacing: 0.08em;
 }
 
 .match-sheet label,
@@ -644,6 +669,12 @@ a {
   color: var(--ink-dim);
   font-size: 0.78rem;
   min-width: 0;
+}
+
+.sheet-team-head label.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .match-sheet input,
@@ -657,21 +688,6 @@ a {
   color: var(--ink);
   padding: 0.4rem 0.45rem;
   font: inherit;
-}
-
-.sheet-team-head .check {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.45rem 0;
-  white-space: nowrap;
-}
-
-.sheet-side-title {
-  margin: 0.4rem 0 0;
-  color: var(--lime);
-  font-size: 0.9rem;
-  letter-spacing: 0.08em;
 }
 
 .sheet-table-wrap {
@@ -1328,8 +1344,7 @@ a {
 }
 
 @media (max-width: 700px) {
-  .sheet-meta,
-  .sheet-team-head {
+  .sheet-meta {
     grid-template-columns: 1fr;
   }
 }
