@@ -338,6 +338,8 @@ export function AnalysisWorkbench() {
               블로킹 컷
             </button>
           </div>
+          {status ? <p className="status-line status-flash">{status}</p> : null}
+          {error ? <p className="error-line">{error}</p> : null}
 
           {inputMode === "sheet" ? (
             <MatchSheetForm match={match} onChange={syncJsonFromMatch} />
@@ -354,8 +356,6 @@ export function AnalysisWorkbench() {
               />
             </>
           )}
-          {status ? <p className="status-line status-line-top">{status}</p> : null}
-          {error ? <p className="error-line">{error}</p> : null}
         </div>
 
         <div className="report-pane">
