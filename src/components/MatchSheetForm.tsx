@@ -2,18 +2,18 @@ import type { MatchInput, PlayerStats, Position, TeamInput } from "@/lib/types";
 
 const POSITIONS: Position[] = ["OH", "OPP", "MB", "S", "L", "U"];
 
-const STAT_FIELDS: Array<{ key: keyof PlayerStats; label: string; min?: number }> = [
+const STAT_FIELDS: Array<{ key: keyof PlayerStats; label: string; title?: string; min?: number }> = [
   { key: "attacks", label: "공격" },
   { key: "kills", label: "킬" },
-  { key: "attackErrors", label: "공격실수" },
+  { key: "attackErrors", label: "공실", title: "공격실수" },
   { key: "blocks", label: "블로킹" },
   { key: "digs", label: "디그" },
   { key: "aces", label: "에이스" },
-  { key: "serveErrors", label: "서브실수" },
+  { key: "serveErrors", label: "서브실", title: "서브실수" },
   { key: "receptions", label: "리시브" },
-  { key: "receptionErrors", label: "리시브실수" },
+  { key: "receptionErrors", label: "리실", title: "리시브실수" },
   { key: "sets", label: "세트" },
-  { key: "setErrors", label: "세트실수" },
+  { key: "setErrors", label: "세실", title: "세트실수" },
 ];
 
 function num(v: string, fallback = 0): number {
@@ -115,7 +115,9 @@ function TeamSheet({
               <th>이름</th>
               <th>포지션</th>
               {STAT_FIELDS.map((f) => (
-                <th key={f.key}>{f.label}</th>
+                <th key={f.key} title={f.title ?? f.label}>
+                  {f.label}
+                </th>
               ))}
               <th />
             </tr>
