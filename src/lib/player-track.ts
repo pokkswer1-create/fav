@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { ClipKind, PlayerStats, VideoClipMarker } from "./types";
+import { alignClipsToDuration } from "./clip-align";
 
 export interface JerseyDetection {
   timeSec: number;
@@ -212,9 +213,10 @@ export async function trackPlayerInVideo(opts: {
 
   const statsClips = statsTimelineClips(opts.player as PlayerStats, ocr.durationSec);
   const useStats = ocrClips.length < 2;
-  const clips = useStats
+  const merged = useStats
     ? mergePlayerClips(ocrClips, statsClips, ocr.durationSec)
     : ocrClips;
+  const clips = alignClipsToDuration(merged, ocr.durationSec);
 
   return {
     playerId: opts.player.id,

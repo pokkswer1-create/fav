@@ -1,8 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { demoMatch } from "@/lib/demo-match";
 import { apiFetch, sampleVideoUrl } from "@/lib/api-client";
+import { alignClipsToDuration } from "@/lib/clip-align";
+import { consumeEditorBridge } from "@/lib/storage";
 import type { ClipKind, PlayerStats, VideoClipMarker } from "@/lib/types";
 import { WingLogo } from "./SiteHeader";
 
@@ -45,8 +48,10 @@ function parseSec(raw: string, fallback: number): number {
 }
 
 export function VideoEditorWorkbench() {
+  const search = useSearchParams();
   const [file, setFile] = useState<File | null>(null);
   const [clips, setClips] = useState<VideoClipMarker[]>(() => cloneDemoClips());
+  const [mediaDuration, setMediaDuration] = useState(20);
   const [busy, setBusy] = useState(false);
   const [detecting, setDetecting] = useState(false);
   const [tracking, setTracking] = useState(false);
@@ -54,7 +59,8 @@ export function VideoEditorWorkbench() {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
-  const [previewUrl, setPreviewUrl] = useState(sampleVideoUrl);
+  const [previewUrl, setPreviewUrl] = useState(() => sampleVideoUrl());
+  const [bridgeReady, setBridgeReady] = useState(false);
 
   const selectedPlayer = useMemo(
     () => ROSTER.find((p) => p.number === selectedNumber) ?? ROSTER[0],
@@ -62,14 +68,42 @@ export function VideoEditorWorkbench() {
   );
 
   const validClips = useMemo(
-    () => clips.filter((c) => c.endSec > c.startSec && c.endSec - c.startSec <= 60),
-    [clips],
+    () => alignClipsToDuration(clips, mediaDuration),
+    [clips, mediaDuration],
   );
 
   const totalSeconds = useMemo(
     () => validClips.reduce((sum, c) => sum + (c.endSec - c.startSec), 0),
     [validClips],
   );
+
+  useEffect(() => {
+    if (search.get("bridge") !== "1") {
+      setBridgeReady(true);
+      return;
+    }
+    const payload = consumeEditorBridge();
+    setBridgeReady(true);
+    if (!payload) {
+      setStatus("연결 데이터가 없습니다. 스카우트/분석에서 다시 보내 주세요.");
+      return;
+    }
+    if (payload.playerNumber) setSelectedNumber(payload.playerNumber);
+    if (payload.clips?.length) {
+      const aligned = alignClipsToDuration(payload.clips, mediaDuration);
+      setClips(aligned);
+      setStatus(payload.message ?? `브리지 클립 ${aligned.length}개 로드`);
+    } else if (payload.autoTrack && payload.playerNumber) {
+      setStatus(payload.message ?? `#${payload.playerNumber} 자동 트래킹 준비`);
+      // fire after state settles
+      window.setTimeout(() => {
+        void trackSelectedPlayer(payload.playerNumber);
+      }, 50);
+    } else if (payload.message) {
+      setStatus(payload.message);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
 
   function updateClip(id: string, patch: Partial<VideoClipMarker>) {
     setClips((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
@@ -91,9 +125,12 @@ export function VideoEditorWorkbench() {
       };
       if (!res.ok) throw new Error(data.error ?? `감지 실패 (${res.status})`);
       if (!data.clips?.length) throw new Error("감지된 장면이 없습니다.");
-      setClips(data.clips);
+      const duration = data.durationSec && data.durationSec > 0 ? data.durationSec : mediaDuration;
+      setMediaDuration(duration);
+      const aligned = alignClipsToDuration(data.clips, duration);
+      setClips(aligned);
       setStatus(
-        `자동 장면 감지 ${data.clips.length}클립 · ${data.method === "silence-gaps" ? "오디오 피크" : "그리드 폴백"} · ${data.durationSec?.toFixed(1)}s`,
+        `자동 장면 감지 ${aligned.length}클립 · ${data.method === "silence-gaps" ? "오디오 피크" : "그리드 폴백"} · ${duration.toFixed(1)}s`,
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "장면 감지 실패");
@@ -102,14 +139,16 @@ export function VideoEditorWorkbench() {
     }
   }
 
-  async function trackSelectedPlayer() {
+  async function trackSelectedPlayer(forceNumber?: number) {
+    const number = forceNumber ?? selectedPlayer.number;
+    const player = ROSTER.find((p) => p.number === number) ?? selectedPlayer;
     try {
       setTracking(true);
       setError(null);
       setStatus(null);
       const form = new FormData();
       if (file) form.append("video", file);
-      form.append("number", String(selectedPlayer.number));
+      form.append("number", String(player.number));
       form.append("roster", JSON.stringify(ROSTER));
       const res = await apiFetch("/api/video/track-player", { method: "POST", body: form });
       const data = (await res.json()) as {
@@ -119,12 +158,17 @@ export function VideoEditorWorkbench() {
         detections?: unknown[];
         playerName?: string;
         playerNumber?: number;
+        durationSec?: number;
       };
       if (!res.ok) throw new Error(data.error ?? `트래킹 실패 (${res.status})`);
       if (!data.clips?.length) throw new Error("선수 구간을 찾지 못했습니다.");
-      setClips(data.clips);
+      const duration = data.durationSec && data.durationSec > 0 ? data.durationSec : mediaDuration;
+      setMediaDuration(duration);
+      const aligned = alignClipsToDuration(data.clips, duration);
+      setClips(aligned);
+      setSelectedNumber(player.number);
       setStatus(
-        `#${data.playerNumber} ${data.playerName} 트래킹 ${data.clips.length}클립 · ${data.method} · 감지 ${data.detections?.length ?? 0}프레임`,
+        `#${data.playerNumber} ${data.playerName} 트래킹 ${aligned.length}클립 · ${data.method} · 감지 ${data.detections?.length ?? 0}프레임 · 길이정렬 OK`,
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "선수 트래킹 실패");
@@ -177,21 +221,41 @@ export function VideoEditorWorkbench() {
 
   const locked = busy || detecting || tracking;
 
+  if (!bridgeReady) {
+    return (
+      <div className="workbench">
+        <p className="status-line">편집기 준비 중…</p>
+      </div>
+    );
+  }
+
   return (
     <div className="workbench">
       <section className="workbench-intro">
         <p className="eyebrow">HIGHLIGHT DESK</p>
         <h1>경기 영상 하이라이트 편집</h1>
         <p className="lede">
-          등번호로 선수를 고르면 트래킹 구간을 잘라 주고, 장면 감지·수동 클립으로도 하이라이트 MP4를
-          만들 수 있습니다.
+          스카우트 타임스탬프·선수 트래킹·장면 감지 클립을 영상 길이에 맞춰 정렬한 뒤 하이라이트
+          MP4를 만듭니다.
         </p>
       </section>
 
       <section className="editor-layout">
         <div className="video-pane">
           <div className="video-frame">
-            <video key={previewUrl} src={previewUrl} controls playsInline />
+            <video
+              key={previewUrl}
+              src={previewUrl}
+              controls
+              playsInline
+              onLoadedMetadata={(e) => {
+                const d = e.currentTarget.duration;
+                if (Number.isFinite(d) && d > 0) {
+                  setMediaDuration(d);
+                  setClips((prev) => alignClipsToDuration(prev, d));
+                }
+              }}
+            />
             <div className="video-badge">
               <WingLogo size={28} />
               <span>FAV CUT</span>
@@ -207,13 +271,17 @@ export function VideoEditorWorkbench() {
                   const next = e.target.files?.[0] ?? null;
                   setFile(next);
                   if (next) setPreviewUrl(URL.createObjectURL(next));
-                  else setPreviewUrl(sampleVideoUrl());
+                  else {
+                    setPreviewUrl(sampleVideoUrl());
+                    setMediaDuration(20);
+                  }
                 }}
               />
             </label>
             <p className="hint">
               {file ? file.name : "업로드 없으면 20초 데모 영상(등번호 7/10/4 오버레이)을 사용합니다."}{" "}
-              · 예상 길이 {totalSeconds.toFixed(1)}s
+              · 미디어 {mediaDuration.toFixed(1)}s · 유효 클립 {validClips.length}개 /{" "}
+              {totalSeconds.toFixed(1)}s
             </p>
           </div>
         </div>
@@ -238,7 +306,7 @@ export function VideoEditorWorkbench() {
               type="button"
               className="btn primary"
               disabled={locked}
-              onClick={trackSelectedPlayer}
+              onClick={() => void trackSelectedPlayer()}
             >
               {tracking ? "트래킹 중…" : `#${selectedPlayer.number} 선수 컷 만들기`}
             </button>

@@ -3,8 +3,9 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { VideoClipMarker } from "./types";
-import { removePath } from "./media-validate";
+import { removePath, probeMedia } from "./media-validate";
 import { SafeHttpError, logServerError } from "./security";
+import { alignClipsToDuration } from "./clip-align";
 
 export const UPLOAD_ROOT = path.join("/tmp", "fav-uploads");
 export const RENDER_ROOT = path.join("/tmp", "fav-renders");
@@ -69,7 +70,12 @@ export async function renderHighlightReel(
   clips: VideoClipMarker[],
 ): Promise<{ outputPath: string; clipCount: number; workDir: string }> {
   await ensureWorkDirs();
-  const valid = validateClips(clips);
+  const probe = await probeMedia(sourcePath);
+  const aligned = alignClipsToDuration(validateClips(clips), probe.durationSec);
+  if (aligned.length === 0) {
+    throw new SafeHttpError(400, "영상 길이에 맞는 유효 클립이 없습니다.");
+  }
+  const valid = aligned;
   const jobId = randomUUID();
   const workDir = path.join(RENDER_ROOT, jobId);
   await fs.mkdir(workDir, { recursive: true });

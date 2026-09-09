@@ -18,15 +18,18 @@ export default function HomePage() {
         </div>
         <h1>경기 넣으면 전력, 영상은 컷.</h1>
         <p className="lede">
-          스코어시트로 전력을 분석하고, 코트 히트맵을 보며, 영상은 자동 장면 감지로 하이라이트를
-          붙입니다.
+          포인트 스카우트 타임스탬프로 어긋남 없는 컷을 만들고, 전력분석·하이라이트·보관함까지
+          이어서 씁니다.
         </p>
         <div className="cta-row">
-          <Link className="btn primary" href="/analyze">
-            전력분석 시작
+          <Link className="btn primary" href="/scout">
+            스카우트 시작
+          </Link>
+          <Link className="btn ghost" href="/analyze">
+            전력분석
           </Link>
           <Link className="btn ghost" href="/editor">
-            영상 편집하기
+            영상 편집
           </Link>
         </div>
       </div>

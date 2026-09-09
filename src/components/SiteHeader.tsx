@@ -22,8 +22,10 @@ export function SiteHeader() {
         <span className="brand-word">FAV</span>
       </Link>
       <nav className="site-nav">
+        <Link href="/scout">스카우트</Link>
         <Link href="/analyze">전력분석</Link>
         <Link href="/editor">영상편집</Link>
+        <Link href="/library">보관함</Link>
       </nav>
     </header>
   );
