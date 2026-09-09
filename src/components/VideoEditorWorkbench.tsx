@@ -1,13 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import { demoMatch } from "@/lib/demo-match";
 import { apiFetch, sampleVideoUrl } from "@/lib/api-client";
 import { alignClipsToDuration } from "@/lib/clip-align";
+import {
+  createPlayerMark,
+  marksToClips,
+  summarizeMarks,
+  type PlayerMark,
+} from "@/lib/player-marks";
 import { consumeEditorBridge } from "@/lib/storage";
 import type { ClipKind, PlayerStats, VideoClipMarker } from "@/lib/types";
 import { WingLogo } from "./SiteHeader";
+import { HowToPanel } from "./UiGuide";
 
 const KIND_OPTIONS: { value: ClipKind; label: string }[] = [
   { value: "kill", label: "킬" },
@@ -49,8 +56,13 @@ function parseSec(raw: string, fallback: number): number {
 
 export function VideoEditorWorkbench() {
   const search = useSearchParams();
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [clips, setClips] = useState<VideoClipMarker[]>(() => cloneDemoClips());
+  const [marks, setMarks] = useState<PlayerMark[]>([]);
+  const [markMode, setMarkMode] = useState(false);
+  const [customNumber, setCustomNumber] = useState("");
+  const [customName, setCustomName] = useState("");
   const [mediaDuration, setMediaDuration] = useState(20);
   const [busy, setBusy] = useState(false);
   const [detecting, setDetecting] = useState(false);
@@ -67,6 +79,24 @@ export function VideoEditorWorkbench() {
     () => ROSTER.find((p) => p.number === selectedNumber) ?? ROSTER[0],
     [selectedNumber],
   );
+
+  const activeMarkTarget = useMemo(() => {
+    const typed = Number(customNumber);
+    if (customNumber.trim() && Number.isFinite(typed) && typed >= 0 && typed <= 99) {
+      return {
+        number: Math.round(typed),
+        name: customName.trim() || `선수`,
+        id: `custom-${Math.round(typed)}`,
+      };
+    }
+    return {
+      number: selectedPlayer.number,
+      name: selectedPlayer.name,
+      id: selectedPlayer.id,
+    };
+  }, [customName, customNumber, selectedPlayer]);
+
+  const markSummary = useMemo(() => summarizeMarks(marks), [marks]);
 
   const validClips = useMemo(
     () => alignClipsToDuration(clips, mediaDuration),
@@ -112,6 +142,68 @@ export function VideoEditorWorkbench() {
 
   function updateClip(id: string, patch: Partial<VideoClipMarker>) {
     setClips((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  }
+
+  function addMarkAtTime(opts?: { xNorm?: number; yNorm?: number; timeSec?: number }) {
+    const video = videoRef.current;
+    const timeSec =
+      typeof opts?.timeSec === "number"
+        ? opts.timeSec
+        : video && Number.isFinite(video.currentTime)
+          ? video.currentTime
+          : 0;
+    const mark = createPlayerMark({
+      timeSec,
+      playerNumber: activeMarkTarget.number,
+      playerName: activeMarkTarget.name,
+      playerId: activeMarkTarget.id,
+      xNorm: opts?.xNorm,
+      yNorm: opts?.yNorm,
+    });
+    setMarks((prev) => [...prev, mark].sort((a, b) => a.timeSec - b.timeSec));
+    setError(null);
+    setStatus(
+      `#${mark.playerNumber} ${mark.playerName} 마크 @ ${mark.timeSec.toFixed(1)}s (총 ${marks.length + 1}개)`,
+    );
+  }
+
+  function onVideoClick(e: MouseEvent<HTMLVideoElement>) {
+    if (!markMode) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const xNorm = rect.width > 0 ? (e.clientX - rect.left) / rect.width : undefined;
+    const yNorm = rect.height > 0 ? (e.clientY - rect.top) / rect.height : undefined;
+    addMarkAtTime({ xNorm, yNorm, timeSec: e.currentTarget.currentTime });
+  }
+
+  function buildClipsFromMarks(onlySelected = false) {
+    if (!marks.length) {
+      setError("찍은 선수 마크가 없습니다. 번호 찍기 모드에서 영상을 클릭하거나 ‘지금 시각에 찍기’를 누르세요.");
+      return;
+    }
+    const next = marksToClips(marks, mediaDuration, {
+      onlyPlayerNumber: onlySelected ? activeMarkTarget.number : undefined,
+      padSec: 1.2,
+      mergeGapSec: 2.5,
+      kind: "custom",
+    });
+    if (!next.length) {
+      setError("선택한 선수의 마크로 만든 클립이 없습니다.");
+      return;
+    }
+    setClips(next);
+    setError(null);
+    setStatus(
+      onlySelected
+        ? `#${activeMarkTarget.number} 마크 ${next.length}클립 생성 — 하이라이트 생성 가능`
+        : `찍은 선수 ${markSummary.length}명 → ${next.length}클립 생성 — 하이라이트 생성 가능`,
+    );
+  }
+
+  function seekToMark(mark: PlayerMark) {
+    const video = videoRef.current;
+    if (!video) return;
+    video.currentTime = mark.timeSec;
+    void video.play().catch(() => undefined);
   }
 
   async function autoDetectScenes() {
@@ -270,19 +362,30 @@ export function VideoEditorWorkbench() {
         <p className="eyebrow">HIGHLIGHT DESK</p>
         <h1>경기 영상 하이라이트 편집</h1>
         <p className="lede">
-          스카우트 타임스탬프·선수 트래킹·장면 감지 클립을 영상 길이에 맞춰 정렬한 뒤 하이라이트
-          MP4를 만듭니다.
+          등번호가 안 보이면 OCR 대신 <strong>번호를 직접 찍어</strong> 선수에 연결한 뒤, 찍힌
+          선수 컷으로 하이라이트를 만드세요.
         </p>
       </section>
 
+      <HowToPanel
+        title="번호가 안 보일 때"
+        steps={[
+          "① 선수 선택(또는 번호·이름 직접 입력) → ‘번호 찍기’ 켜기",
+          "② 영상에서 그 선수가 보일 때 클릭(또는 ‘지금 시각에 찍기’)",
+          "③ ‘찍은 선수 컷 만들기’ → 하이라이트 생성",
+        ]}
+      />
+
       <section className="editor-layout">
         <div className="video-pane">
-          <div className="video-frame">
+          <div className={`video-frame ${markMode ? "is-marking" : ""}`}>
             <video
+              ref={videoRef}
               key={previewUrl}
               src={previewUrl}
               controls
               playsInline
+              onClick={onVideoClick}
               onLoadedMetadata={(e) => {
                 // Never re-align source clips to the rendered highlight length —
                 // that would shrink/destroy usable timestamps after a successful render.
@@ -298,6 +401,11 @@ export function VideoEditorWorkbench() {
               <WingLogo size={28} />
               <span>FAV CUT</span>
             </div>
+            {markMode ? (
+              <p className="mark-mode-hint">
+                찍기 ON · 클릭 시 #{activeMarkTarget.number} {activeMarkTarget.name}
+              </p>
+            ) : null}
           </div>
           <div className="upload-row">
             <label className="btn ghost file-btn">
@@ -328,10 +436,13 @@ export function VideoEditorWorkbench() {
         <div className="clip-pane">
           <div className="player-track-bar">
             <label>
-              트래킹 선수
+              로스터 선수
               <select
                 value={selectedNumber}
-                onChange={(e) => setSelectedNumber(Number(e.target.value))}
+                onChange={(e) => {
+                  setSelectedNumber(Number(e.target.value));
+                  setCustomNumber("");
+                }}
                 aria-label="트래킹할 선수"
               >
                 {ROSTER.map((p) => (
@@ -341,15 +452,102 @@ export function VideoEditorWorkbench() {
                 ))}
               </select>
             </label>
+            <label>
+              번호 직접
+              <input
+                type="number"
+                min={0}
+                max={99}
+                placeholder="예: 14"
+                value={customNumber}
+                onChange={(e) => setCustomNumber(e.target.value)}
+                aria-label="직접 입력 등번호"
+              />
+            </label>
+            <label>
+              이름 직접
+              <input
+                type="text"
+                placeholder="선택"
+                value={customName}
+                onChange={(e) => setCustomName(e.target.value)}
+                aria-label="직접 입력 선수 이름"
+              />
+            </label>
+            <button
+              type="button"
+              className={`btn ghost ${markMode ? "is-active" : ""}`}
+              disabled={locked}
+              onClick={() => setMarkMode((v) => !v)}
+            >
+              {markMode ? "번호 찍기 ON" : "번호 찍기"}
+            </button>
+            <button type="button" className="btn ghost" disabled={locked} onClick={() => addMarkAtTime()}>
+              지금 시각에 #{activeMarkTarget.number} 찍기
+            </button>
             <button
               type="button"
               className="btn primary"
+              disabled={locked || marks.length === 0}
+              onClick={() => buildClipsFromMarks(false)}
+            >
+              찍은 선수 컷 만들기
+            </button>
+            <button
+              type="button"
+              className="btn ghost"
+              disabled={locked || marks.length === 0}
+              onClick={() => buildClipsFromMarks(true)}
+            >
+              #{activeMarkTarget.number}만 컷
+            </button>
+            <button
+              type="button"
+              className="btn ghost"
               disabled={locked}
               onClick={() => void trackSelectedPlayer()}
+              title="OCR 기반 — 등번호가 잘 보일 때만"
             >
-              {tracking ? "트래킹 중…" : `#${selectedPlayer.number} 선수 컷 만들기`}
+              {tracking ? "OCR 중…" : "OCR 선수 추적"}
             </button>
           </div>
+
+          {marks.length > 0 ? (
+            <div className="mark-panel">
+              <div className="mark-summary">
+                {markSummary.map((row) => (
+                  <span key={row.playerNumber}>
+                    #{row.playerNumber} {row.playerName} · {row.count}
+                  </span>
+                ))}
+                <button type="button" className="btn ghost danger" onClick={() => setMarks([])}>
+                  마크 전체 삭제
+                </button>
+              </div>
+              <ul className="mark-list">
+                {marks.map((mark) => (
+                  <li key={mark.id}>
+                    <button type="button" className="mark-jump" onClick={() => seekToMark(mark)}>
+                      #{mark.playerNumber} {mark.playerName} @ {mark.timeSec.toFixed(1)}s
+                      {typeof mark.xNorm === "number" ? " · 위치핀" : ""}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn ghost danger"
+                      onClick={() => setMarks((prev) => prev.filter((m) => m.id !== mark.id))}
+                    >
+                      삭제
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <p className="hint mark-empty">
+              등번호가 안 보이면 OCR 대신 번호를 직접 찍으세요. 현재 대상: #
+              {activeMarkTarget.number} {activeMarkTarget.name}
+            </p>
+          )}
 
           <div className="pane-actions">
             <button type="button" className="btn ghost" onClick={() => setClips((c) => [...c, newClip()])}>
@@ -361,6 +559,8 @@ export function VideoEditorWorkbench() {
               onClick={() => {
                 viewingResultRef.current = false;
                 setClips(cloneDemoClips());
+                setMarks([]);
+                setMarkMode(false);
                 setPreviewUrl(sampleVideoUrl());
                 setMediaDuration(20);
                 setError(null);

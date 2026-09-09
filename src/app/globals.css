@@ -958,7 +958,7 @@ a {
 
 .player-track-bar {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.65rem;
   align-items: end;
   margin-bottom: 0.85rem;
@@ -973,13 +973,97 @@ a {
   font-size: 0.78rem;
 }
 
-.player-track-bar select {
+.player-track-bar select,
+.player-track-bar input {
   width: 100%;
   border: 1px solid var(--line);
   background: #06110c;
   color: var(--ink);
   padding: 0.5rem 0.55rem;
   font: inherit;
+}
+
+.player-track-bar .btn {
+  width: 100%;
+}
+
+.video-frame.is-marking {
+  outline: 2px solid var(--magenta);
+  outline-offset: 2px;
+}
+
+.video-frame.is-marking video {
+  cursor: crosshair;
+}
+
+.mark-mode-hint {
+  position: absolute;
+  left: 0.75rem;
+  bottom: 0.75rem;
+  margin: 0;
+  padding: 0.35rem 0.55rem;
+  background: rgba(6, 17, 12, 0.88);
+  color: var(--magenta);
+  font-size: 0.78rem;
+  font-weight: 700;
+  border: 1px solid rgba(255, 45, 149, 0.35);
+}
+
+.mark-panel {
+  margin-bottom: 0.85rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.mark-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+  margin-bottom: 0.55rem;
+  color: var(--ink-dim);
+  font-size: 0.78rem;
+}
+
+.mark-summary span {
+  padding: 0.2rem 0.45rem;
+  border: 1px solid var(--line);
+  background: rgba(255, 45, 149, 0.08);
+}
+
+.mark-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+  max-height: 9rem;
+  overflow: auto;
+}
+
+.mark-list li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.mark-jump {
+  text-align: left;
+  border: 1px solid var(--line);
+  background: #06110c;
+  color: var(--ink);
+  padding: 0.4rem 0.55rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.mark-jump:hover {
+  border-color: var(--magenta);
+}
+
+.mark-empty {
+  margin: 0 0 0.85rem;
 }
 
 .player-tag {
