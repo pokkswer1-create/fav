@@ -30,7 +30,7 @@ import {
   type CustomRosters,
 } from "@/lib/storage";
 import { analyzeMatch } from "@/lib/analysis";
-import { sampleVideoUrl } from "@/lib/api-client";
+import { DEFAULT_MATCH_VIDEO, MATCH_VIDEOS } from "@/lib/match-videos";
 import {
   captureClockFromPlayer,
   nextClockAfterSeek,
@@ -108,7 +108,7 @@ export function ScoutWorkbench() {
   const [videoClock, setVideoClock] = useState(0);
   const [followPlayback, setFollowPlayback] = useState(true);
   const [manualOverride, setManualOverride] = useState(false);
-  const [mediaDuration, setMediaDuration] = useState(20);
+  const [mediaDuration, setMediaDuration] = useState(480);
   const [skillDraft, setSkillDraft] = useDefaultSkillDraft();
   const [codeTeam, setCodeTeam] = useState<TeamSide>("home");
   const [showProCode, setShowProCode] = useState(true);
@@ -117,6 +117,8 @@ export function ScoutWorkbench() {
   );
   const [status, setStatus] = useState<string | null>(null);
   const [showRosterEdit, setShowRosterEdit] = useState(false);
+  const [matchVideoId, setMatchVideoId] = useState(DEFAULT_MATCH_VIDEO.id);
+  const [videoSrc, setVideoSrc] = useState(DEFAULT_MATCH_VIDEO.src);
 
   const rosterHome = useMemo(() => toPlayers(rosters.home), [rosters.home]);
   const rosterAway = useMemo(() => toPlayers(rosters.away), [rosters.away]);
@@ -385,17 +387,39 @@ export function ScoutWorkbench() {
       <HowToPanel
         title="스카우트 사용법"
         steps={[
-          "① 데모 스카우트 — 연습용 기록·타임스탬프를 불러옵니다.",
-          "② 빠른 득점 버튼 또는 프로 코딩으로 포인트를 남깁니다.",
+          "① 위에서 실경기 영상을 고릅니다 (Drive에서 가져온 세트).",
+          "② 영상 시계에 맞춰 득점·프로 코딩을 남깁니다.",
           "③ 저장 후 타임스탬프 컷 → 편집, 또는 전력분석으로 이동합니다.",
         ]}
       />
 
       <div className="scout-media-grid">
         <div className="scout-video-pane">
+          <label className="match-video-picker">
+            경기 영상
+            <select
+              value={matchVideoId}
+              aria-label="스카우트 경기 영상"
+              onChange={(e) => {
+                const hit = MATCH_VIDEOS.find((v) => v.id === e.target.value);
+                if (!hit) return;
+                setMatchVideoId(hit.id);
+                setVideoSrc(hit.src);
+                setVideoClock(0);
+                setStatus(`${hit.label} 로드 · ${hit.sourceFile}`);
+              }}
+            >
+              {MATCH_VIDEOS.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <video
             ref={videoRef}
-            src={sampleVideoUrl()}
+            key={videoSrc}
+            src={videoSrc}
             controls
             playsInline
             onLoadedMetadata={(e) => {

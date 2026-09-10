@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Real match proxy media (local/demo; keep out of git)
+/public/match/*.mp4

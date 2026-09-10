@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import { demoMatch } from "@/lib/demo-match";
-import { apiFetch, sampleVideoUrl } from "@/lib/api-client";
+import { apiFetch } from "@/lib/api-client";
 import { alignClipsToDuration } from "@/lib/clip-align";
 import {
   createPlayerMark,
@@ -11,6 +11,7 @@ import {
   summarizeMarks,
   type PlayerMark,
 } from "@/lib/player-marks";
+import { DEFAULT_MATCH_VIDEO, MATCH_VIDEOS } from "@/lib/match-videos";
 import { consumeEditorBridge } from "@/lib/storage";
 import type { ClipKind, PlayerStats, VideoClipMarker } from "@/lib/types";
 import { WingLogo } from "./SiteHeader";
@@ -63,7 +64,7 @@ export function VideoEditorWorkbench() {
   const [markMode, setMarkMode] = useState(false);
   const [customNumber, setCustomNumber] = useState("");
   const [customName, setCustomName] = useState("");
-  const [mediaDuration, setMediaDuration] = useState(20);
+  const [mediaDuration, setMediaDuration] = useState(480);
   const [busy, setBusy] = useState(false);
   const [detecting, setDetecting] = useState(false);
   const [tracking, setTracking] = useState(false);
@@ -71,7 +72,8 @@ export function VideoEditorWorkbench() {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
-  const [previewUrl, setPreviewUrl] = useState(() => sampleVideoUrl());
+  const [matchVideoId, setMatchVideoId] = useState(DEFAULT_MATCH_VIDEO.id);
+  const [previewUrl, setPreviewUrl] = useState(DEFAULT_MATCH_VIDEO.src);
   const [bridgeReady, setBridgeReady] = useState(false);
   const viewingResultRef = useRef(false);
 
@@ -408,6 +410,33 @@ export function VideoEditorWorkbench() {
             ) : null}
           </div>
           <div className="upload-row">
+            <label>
+              경기 영상
+              <select
+                value={file ? "" : matchVideoId}
+                aria-label="경기 영상 선택"
+                onChange={(e) => {
+                  const id = e.target.value;
+                  if (!id) return;
+                  const hit = MATCH_VIDEOS.find((v) => v.id === id);
+                  if (!hit) return;
+                  viewingResultRef.current = false;
+                  setFile(null);
+                  setMatchVideoId(hit.id);
+                  setPreviewUrl(hit.src);
+                  setMarks([]);
+                  setError(null);
+                  setStatus(`${hit.label} 로드 · 원본 ${hit.sourceFile}`);
+                }}
+              >
+                {file ? <option value="">업로드 파일 사용 중</option> : null}
+                {MATCH_VIDEOS.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.label}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label className="btn ghost file-btn">
               영상 업로드
               <input
@@ -417,16 +446,21 @@ export function VideoEditorWorkbench() {
                   const next = e.target.files?.[0] ?? null;
                   setFile(next);
                   viewingResultRef.current = false;
-                  if (next) setPreviewUrl(URL.createObjectURL(next));
-                  else {
-                    setPreviewUrl(sampleVideoUrl());
-                    setMediaDuration(20);
+                  if (next) {
+                    setPreviewUrl(URL.createObjectURL(next));
+                    setStatus(`업로드: ${next.name}`);
+                  } else {
+                    setPreviewUrl(DEFAULT_MATCH_VIDEO.src);
+                    setMatchVideoId(DEFAULT_MATCH_VIDEO.id);
+                    setMediaDuration(480);
                   }
                 }}
               />
             </label>
             <p className="hint">
-              {file ? file.name : "업로드 없으면 20초 데모 영상(등번호 7/10/4 오버레이)을 사용합니다."}{" "}
+              {file
+                ? file.name
+                : `${MATCH_VIDEOS.find((v) => v.id === matchVideoId)?.label ?? "실경기"} · Drive 원본 프록시`}{" "}
               · 미디어 {mediaDuration.toFixed(1)}s · 유효 클립 {validClips.length}개 /{" "}
               {totalSeconds.toFixed(1)}s
             </p>
@@ -561,10 +595,11 @@ export function VideoEditorWorkbench() {
                 setClips(cloneDemoClips());
                 setMarks([]);
                 setMarkMode(false);
-                setPreviewUrl(sampleVideoUrl());
-                setMediaDuration(20);
+                setFile(null);
+                setMatchVideoId(DEFAULT_MATCH_VIDEO.id);
+                setPreviewUrl(DEFAULT_MATCH_VIDEO.src);
                 setError(null);
-                setStatus(null);
+                setStatus(`데모 클립 + ${DEFAULT_MATCH_VIDEO.label}`);
               }}
             >
               데모 타임라인

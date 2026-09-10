@@ -548,6 +548,39 @@ a {
   gap: 0.55rem;
 }
 
+.upload-row > label:not(.btn) {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--ink-dim);
+  font-size: 0.82rem;
+}
+
+.upload-row select {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: #06110c;
+  color: var(--ink);
+  padding: 0.45rem 0.55rem;
+  font: inherit;
+}
+
+.match-video-picker {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.65rem;
+  color: var(--ink-dim);
+  font-size: 0.82rem;
+}
+
+.match-video-picker select {
+  width: 100%;
+  border: 1px solid rgba(255, 45, 149, 0.35);
+  background: #06110c;
+  color: var(--ink);
+  padding: 0.5rem 0.6rem;
+  font: inherit;
+}
+
 .clip-list {
   display: grid;
   gap: 0.65rem;
