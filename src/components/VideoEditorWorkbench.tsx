@@ -11,7 +11,7 @@ import {
   summarizeMarks,
   type PlayerMark,
 } from "@/lib/player-marks";
-import { DEFAULT_MATCH_VIDEO, MATCH_VIDEOS, MAX_MATCH_DURATION_LABEL } from "@/lib/match-videos";
+import { DEFAULT_MATCH_VIDEO, listAvailableMatchVideos, MATCH_VIDEOS, MAX_MATCH_DURATION_LABEL, resolvePreferredMatchVideo, type MatchVideoOption } from "@/lib/match-videos";
 import { consumeEditorBridge } from "@/lib/storage";
 import type { ClipKind, PlayerStats, VideoClipMarker } from "@/lib/types";
 import { WingLogo } from "./SiteHeader";
@@ -75,7 +75,29 @@ export function VideoEditorWorkbench() {
   const [matchVideoId, setMatchVideoId] = useState(DEFAULT_MATCH_VIDEO.id);
   const [previewUrl, setPreviewUrl] = useState(DEFAULT_MATCH_VIDEO.src);
   const [bridgeReady, setBridgeReady] = useState(false);
+  const [catalog, setCatalog] = useState<MatchVideoOption[]>(
+    () => MATCH_VIDEOS.filter((v) => v.kind === "preview"),
+  );
   const viewingResultRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const available = await listAvailableMatchVideos();
+      const preferred = await resolvePreferredMatchVideo();
+      if (cancelled || file) return;
+      setCatalog(available);
+      setMatchVideoId(preferred.id);
+      setPreviewUrl(preferred.src);
+      setMediaDuration(preferred.approxDurationSec);
+      if (preferred.kind === "full") {
+        setStatus(`${preferred.label} 준비됨 · ${MAX_MATCH_DURATION_LABEL}`);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [file]);
 
   const selectedPlayer = useMemo(
     () => ROSTER.find((p) => p.number === selectedNumber) ?? ROSTER[0],
@@ -427,7 +449,7 @@ export function VideoEditorWorkbench() {
                 onChange={(e) => {
                   const id = e.target.value;
                   if (!id) return;
-                  const hit = MATCH_VIDEOS.find((v) => v.id === id);
+                  const hit = catalog.find((v) => v.id === id) ?? MATCH_VIDEOS.find((v) => v.id === id);
                   if (!hit) return;
                   viewingResultRef.current = false;
                   setFile(null);
@@ -440,7 +462,7 @@ export function VideoEditorWorkbench() {
                 }}
               >
                 {file ? <option value="">업로드 파일 사용 중</option> : null}
-                {MATCH_VIDEOS.map((v) => (
+                {catalog.map((v) => (
                   <option key={v.id} value={v.id}>
                     {v.label}
                   </option>

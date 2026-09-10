@@ -30,7 +30,14 @@ import {
   type CustomRosters,
 } from "@/lib/storage";
 import { analyzeMatch } from "@/lib/analysis";
-import { DEFAULT_MATCH_VIDEO, MATCH_VIDEOS, MAX_MATCH_DURATION_LABEL } from "@/lib/match-videos";
+import {
+  DEFAULT_MATCH_VIDEO,
+  listAvailableMatchVideos,
+  MATCH_VIDEOS,
+  MAX_MATCH_DURATION_LABEL,
+  resolvePreferredMatchVideo,
+  type MatchVideoOption,
+} from "@/lib/match-videos";
 import {
   captureClockFromPlayer,
   nextClockAfterSeek,
@@ -120,6 +127,30 @@ export function ScoutWorkbench() {
   const [matchVideoId, setMatchVideoId] = useState(DEFAULT_MATCH_VIDEO.id);
   const [videoSrc, setVideoSrc] = useState(DEFAULT_MATCH_VIDEO.src);
   const [uploadedName, setUploadedName] = useState<string | null>(null);
+  const [catalog, setCatalog] = useState<MatchVideoOption[]>(
+    () => MATCH_VIDEOS.filter((v) => v.kind === "preview"),
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const available = await listAvailableMatchVideos();
+      const preferred = await resolvePreferredMatchVideo();
+      if (cancelled) return;
+      setCatalog(available);
+      if (!uploadedName) {
+        setMatchVideoId(preferred.id);
+        setVideoSrc(preferred.src);
+        setMediaDuration(preferred.approxDurationSec);
+        if (preferred.kind === "full") {
+          setStatus(`${preferred.label} 준비됨 · ${MAX_MATCH_DURATION_LABEL}`);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [uploadedName]);
 
   const rosterHome = useMemo(() => toPlayers(rosters.home), [rosters.home]);
   const rosterAway = useMemo(() => toPlayers(rosters.away), [rosters.away]);
@@ -404,7 +435,7 @@ export function ScoutWorkbench() {
               onChange={(e) => {
                 const id = e.target.value;
                 if (!id) return;
-                const hit = MATCH_VIDEOS.find((v) => v.id === id);
+                const hit = catalog.find((v) => v.id === id) ?? MATCH_VIDEOS.find((v) => v.id === id);
                 if (!hit) return;
                 setUploadedName(null);
                 setMatchVideoId(hit.id);
@@ -415,7 +446,7 @@ export function ScoutWorkbench() {
               }}
             >
               {uploadedName ? <option value="">업로드 파일 사용 중</option> : null}
-              {MATCH_VIDEOS.map((v) => (
+              {catalog.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.label}
                 </option>
