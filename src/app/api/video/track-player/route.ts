@@ -8,10 +8,12 @@ import type { PlayerStats } from "@/lib/types";
 import { rosterSchema } from "@/lib/schemas";
 import { ensureWorkDirs, sweepTempFiles, UPLOAD_ROOT } from "@/lib/video";
 import {
+  assertDurationAllowedForAutoAnalyze,
   isSamplePath,
   MAX_UPLOAD_BYTES,
+  probeMedia,
   removePath,
-  saveUploadBytes,
+  saveUploadFile,
 } from "@/lib/media-validate";
 import {
   clientIp,
@@ -102,14 +104,16 @@ export async function POST(request: Request) {
 
     let sourcePath = "";
     if (file && typeof file !== "string" && "arrayBuffer" in file) {
-      const bytes = Buffer.from(await file.arrayBuffer());
       uploadPath = path.join(UPLOAD_ROOT, `${randomUUID()}-track.mp4`);
-      await saveUploadBytes(bytes, uploadPath);
+      await saveUploadFile(file as File, uploadPath);
       sourcePath = uploadPath;
     } else {
       sourcePath = path.join(UPLOAD_ROOT, "sample-match.mp4");
       await createDetectableSampleVideo(sourcePath);
     }
+
+    const probe = await probeMedia(sourcePath);
+    assertDurationAllowedForAutoAnalyze(probe.durationSec);
 
     const player = findPlayer(jerseyNumber, rosterJson);
     const result = await withHeavyJob(() =>

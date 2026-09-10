@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
-import { createReadStream, promises as fs } from "node:fs";
+import { createReadStream, createWriteStream, promises as fs } from "node:fs";
 import path from "node:path";
 import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { SafeHttpError } from "./security";
 
 export interface MediaProbe {
@@ -13,9 +14,32 @@ export interface MediaProbe {
 
 const ALLOWED_VIDEO = new Set(["h264", "hevc", "av1", "vp9", "mpeg4"]);
 const ALLOWED_AUDIO = new Set(["aac", "mp3", "opus", "vorbis", "pcm_s16le", "flac"]);
-const MAX_DURATION_SEC = Number(process.env.FAV_MAX_VIDEO_DURATION || 600);
+/** Full matches can run up to ~4 hours. */
+export const MAX_DURATION_SEC = Number(process.env.FAV_MAX_VIDEO_DURATION || 14_400);
+/** Auto silence-detect / OCR are not reliable on multi-hour court video. */
+export const AUTO_ANALYZE_MAX_DURATION_SEC = Number(
+  process.env.FAV_AUTO_ANALYZE_MAX_DURATION || 1_200,
+);
 
-function runCapture(cmd: string, args: string[], timeoutMs = 20_000): Promise<string> {
+export function formatDurationLabel(sec: number): string {
+  if (!Number.isFinite(sec) || sec <= 0) return "—";
+  if (sec < 90) return `${Math.round(sec)}초`;
+  if (sec < 3600) return `${Math.round(sec / 60)}분`;
+  const h = Math.floor(sec / 3600);
+  const m = Math.round((sec % 3600) / 60);
+  return m > 0 ? `${h}시간 ${m}분` : `${h}시간`;
+}
+
+export function assertDurationAllowedForAutoAnalyze(durationSec: number): void {
+  if (durationSec > AUTO_ANALYZE_MAX_DURATION_SEC) {
+    throw new SafeHttpError(
+      400,
+      `자동 감지/OCR은 ${formatDurationLabel(AUTO_ANALYZE_MAX_DURATION_SEC)} 이하만 지원합니다. 긴 경기는 스카우트 스탬프나 번호 찍기를 사용하세요.`,
+    );
+  }
+}
+
+function runCapture(cmd: string, args: string[], timeoutMs = 60_000): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
@@ -102,12 +126,15 @@ export function looksLikeVideoContainer(buf: Buffer): boolean {
   return false;
 }
 
-export const MAX_UPLOAD_BYTES = Number(process.env.FAV_MAX_UPLOAD_BYTES || 80 * 1024 * 1024);
+/** Default ~12 GiB — enough for a compressed 4h match or a phone MOV set. */
+export const MAX_UPLOAD_BYTES = Number(
+  process.env.FAV_MAX_UPLOAD_BYTES || 12 * 1024 * 1024 * 1024,
+);
 
 export async function saveUploadBytes(
   bytes: Buffer,
   targetPath: string,
-): Promise<void> {
+): Promise<MediaProbe> {
   if (bytes.byteLength === 0) {
     throw new SafeHttpError(400, "빈 영상 파일입니다.");
   }
@@ -118,7 +145,27 @@ export async function saveUploadBytes(
     throw new SafeHttpError(400, "영상 컨테이너로 인식되지 않습니다.");
   }
   await fs.writeFile(targetPath, bytes);
-  await assertAllowedMedia(targetPath);
+  return assertAllowedMedia(targetPath);
+}
+
+/** Stream a browser/File upload to disk without buffering the whole file in RAM. */
+export async function saveUploadFile(file: File, targetPath: string): Promise<MediaProbe> {
+  if (!file.size) {
+    throw new SafeHttpError(400, "빈 영상 파일입니다.");
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    throw new SafeHttpError(413, "영상 용량 한도를 초과했습니다.");
+  }
+  const header = Buffer.from(await file.slice(0, 64).arrayBuffer());
+  if (!looksLikeVideoContainer(header)) {
+    throw new SafeHttpError(400, "영상 컨테이너로 인식되지 않습니다.");
+  }
+  const webStream = file.stream();
+  const nodeReadable = Readable.fromWeb(
+    webStream as unknown as import("node:stream/web").ReadableStream,
+  );
+  await pipeline(nodeReadable, createWriteStream(targetPath));
+  return assertAllowedMedia(targetPath);
 }
 
 export async function removePath(target?: string | null): Promise<void> {

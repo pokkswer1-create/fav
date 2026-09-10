@@ -274,7 +274,7 @@ export function clipsFromScoutPoints(
 /** Estimate a provisional media length from scout stamps (do not hardcode 20s). */
 export function estimateMediaDurationFromScout(
   session: Pick<ScoutSession, "points" | "actions">,
-  fallbackSec = 600,
+  fallbackSec = 14_400,
 ): number {
   const times: number[] = [];
   for (const p of session.points ?? []) {

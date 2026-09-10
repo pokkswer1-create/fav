@@ -15,7 +15,7 @@ import {
   fileStreamResponse,
   isSamplePath,
   removePath,
-  saveUploadBytes,
+  saveUploadFile,
   MAX_UPLOAD_BYTES,
 } from "@/lib/media-validate";
 import {
@@ -77,9 +77,8 @@ export async function POST(request: Request) {
 
     let sourcePath = "";
     if (file && typeof file !== "string" && "arrayBuffer" in file) {
-      const bytes = Buffer.from(await file.arrayBuffer());
       uploadPath = path.join(UPLOAD_ROOT, `${randomUUID()}-source.mp4`);
-      await saveUploadBytes(bytes, uploadPath);
+      await saveUploadFile(file as File, uploadPath);
       sourcePath = uploadPath;
     } else {
       sourcePath = path.join(UPLOAD_ROOT, "sample-match.mp4");

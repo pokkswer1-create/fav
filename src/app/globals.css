@@ -581,6 +581,11 @@ a {
   font: inherit;
 }
 
+.scout-upload-btn {
+  margin-bottom: 0.65rem;
+  width: fit-content;
+}
+
 .clip-list {
   display: grid;
   gap: 0.65rem;

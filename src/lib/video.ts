@@ -10,7 +10,7 @@ import { alignClipsToDuration } from "./clip-align";
 export const UPLOAD_ROOT = path.join("/tmp", "fav-uploads");
 export const RENDER_ROOT = path.join("/tmp", "fav-renders");
 
-const SPAWN_TIMEOUT_MS = Number(process.env.FAV_FFMPEG_TIMEOUT_MS || 120_000);
+const SPAWN_TIMEOUT_MS = Number(process.env.FAV_FFMPEG_TIMEOUT_MS || 600_000);
 
 export async function ensureWorkDirs(): Promise<void> {
   await fs.mkdir(UPLOAD_ROOT, { recursive: true });

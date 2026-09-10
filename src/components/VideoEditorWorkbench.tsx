@@ -11,7 +11,7 @@ import {
   summarizeMarks,
   type PlayerMark,
 } from "@/lib/player-marks";
-import { DEFAULT_MATCH_VIDEO, MATCH_VIDEOS } from "@/lib/match-videos";
+import { DEFAULT_MATCH_VIDEO, MATCH_VIDEOS, MAX_MATCH_DURATION_LABEL } from "@/lib/match-videos";
 import { consumeEditorBridge } from "@/lib/storage";
 import type { ClipKind, PlayerStats, VideoClipMarker } from "@/lib/types";
 import { WingLogo } from "./SiteHeader";
@@ -64,7 +64,7 @@ export function VideoEditorWorkbench() {
   const [markMode, setMarkMode] = useState(false);
   const [customNumber, setCustomNumber] = useState("");
   const [customName, setCustomName] = useState("");
-  const [mediaDuration, setMediaDuration] = useState(480);
+  const [mediaDuration, setMediaDuration] = useState(DEFAULT_MATCH_VIDEO.approxDurationSec);
   const [busy, setBusy] = useState(false);
   const [detecting, setDetecting] = useState(false);
   const [tracking, setTracking] = useState(false);
@@ -370,6 +370,15 @@ export function VideoEditorWorkbench() {
       </section>
 
       <HowToPanel
+        title="긴 경기 영상"
+        steps={[
+          `① 전체 세트(또는 업로드, ${MAX_MATCH_DURATION_LABEL})를 고릅니다.`,
+          "② 스카우트 스탬프·번호 찍기로 컷을 만듭니다 (자동 감지/OCR은 짧은 영상용).",
+          "③ 하이라이트 생성 시 해당 구간만 서버로 보냅니다.",
+        ]}
+      />
+
+      <HowToPanel
         title="번호가 안 보일 때"
         steps={[
           "① 선수 선택(또는 번호·이름 직접 입력) → ‘번호 찍기’ 켜기",
@@ -424,6 +433,7 @@ export function VideoEditorWorkbench() {
                   setFile(null);
                   setMatchVideoId(hit.id);
                   setPreviewUrl(hit.src);
+                  setMediaDuration(hit.approxDurationSec);
                   setMarks([]);
                   setError(null);
                   setStatus(`${hit.label} 로드 · 원본 ${hit.sourceFile}`);
@@ -438,7 +448,7 @@ export function VideoEditorWorkbench() {
               </select>
             </label>
             <label className="btn ghost file-btn">
-              영상 업로드
+              영상 업로드 ({MAX_MATCH_DURATION_LABEL})
               <input
                 type="file"
                 accept="video/mp4,video/webm,video/quicktime"
@@ -448,11 +458,11 @@ export function VideoEditorWorkbench() {
                   viewingResultRef.current = false;
                   if (next) {
                     setPreviewUrl(URL.createObjectURL(next));
-                    setStatus(`업로드: ${next.name}`);
+                    setStatus(`업로드: ${next.name} · ${MAX_MATCH_DURATION_LABEL}까지 지원`);
                   } else {
                     setPreviewUrl(DEFAULT_MATCH_VIDEO.src);
                     setMatchVideoId(DEFAULT_MATCH_VIDEO.id);
-                    setMediaDuration(480);
+                    setMediaDuration(DEFAULT_MATCH_VIDEO.approxDurationSec);
                   }
                 }}
               />
@@ -461,7 +471,7 @@ export function VideoEditorWorkbench() {
               {file
                 ? file.name
                 : `${MATCH_VIDEOS.find((v) => v.id === matchVideoId)?.label ?? "실경기"} · Drive 원본 프록시`}{" "}
-              · 미디어 {mediaDuration.toFixed(1)}s · 유효 클립 {validClips.length}개 /{" "}
+              · 미디어 {mediaDuration.toFixed(1)}s · {MAX_MATCH_DURATION_LABEL} · 유효 클립 {validClips.length}개 /{" "}
               {totalSeconds.toFixed(1)}s
             </p>
           </div>

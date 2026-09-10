@@ -30,7 +30,7 @@ import {
   type CustomRosters,
 } from "@/lib/storage";
 import { analyzeMatch } from "@/lib/analysis";
-import { DEFAULT_MATCH_VIDEO, MATCH_VIDEOS } from "@/lib/match-videos";
+import { DEFAULT_MATCH_VIDEO, MATCH_VIDEOS, MAX_MATCH_DURATION_LABEL } from "@/lib/match-videos";
 import {
   captureClockFromPlayer,
   nextClockAfterSeek,
@@ -108,7 +108,7 @@ export function ScoutWorkbench() {
   const [videoClock, setVideoClock] = useState(0);
   const [followPlayback, setFollowPlayback] = useState(true);
   const [manualOverride, setManualOverride] = useState(false);
-  const [mediaDuration, setMediaDuration] = useState(480);
+  const [mediaDuration, setMediaDuration] = useState(DEFAULT_MATCH_VIDEO.approxDurationSec);
   const [skillDraft, setSkillDraft] = useDefaultSkillDraft();
   const [codeTeam, setCodeTeam] = useState<TeamSide>("home");
   const [showProCode, setShowProCode] = useState(true);
@@ -119,6 +119,7 @@ export function ScoutWorkbench() {
   const [showRosterEdit, setShowRosterEdit] = useState(false);
   const [matchVideoId, setMatchVideoId] = useState(DEFAULT_MATCH_VIDEO.id);
   const [videoSrc, setVideoSrc] = useState(DEFAULT_MATCH_VIDEO.src);
+  const [uploadedName, setUploadedName] = useState<string | null>(null);
 
   const rosterHome = useMemo(() => toPlayers(rosters.home), [rosters.home]);
   const rosterAway = useMemo(() => toPlayers(rosters.away), [rosters.away]);
@@ -248,7 +249,7 @@ export function ScoutWorkbench() {
   }
 
   function sendFilteredToEditor(skillOnly?: boolean) {
-    const duration = mediaDuration > 0 ? mediaDuration : 20;
+    const duration = mediaDuration > 0 ? mediaDuration : DEFAULT_MATCH_VIDEO.approxDurationSec;
     const clips = filterActionsToClips(session.actions ?? [], {
       skill: skillOnly ? skillDraft.skill : undefined,
       effect: skillOnly ? skillDraft.effect : undefined,
@@ -345,7 +346,7 @@ export function ScoutWorkbench() {
   }
 
   function sendToEditor(onlyPlayer?: boolean) {
-    const duration = mediaDuration > 0 ? mediaDuration : 20;
+    const duration = mediaDuration > 0 ? mediaDuration : DEFAULT_MATCH_VIDEO.approxDurationSec;
     const raw = clipsFromScoutPoints(session.points, duration, {
       onlyPlayerNumber: onlyPlayer ? selectedPlayer?.number : undefined,
     });
@@ -387,7 +388,7 @@ export function ScoutWorkbench() {
       <HowToPanel
         title="스카우트 사용법"
         steps={[
-          "① 위에서 실경기 영상을 고릅니다 (Drive에서 가져온 세트).",
+          `① 전체 경기 세트(또는 업로드, ${MAX_MATCH_DURATION_LABEL})를 고릅니다.`,
           "② 영상 시계에 맞춰 득점·프로 코딩을 남깁니다.",
           "③ 저장 후 타임스탬프 컷 → 편집, 또는 전력분석으로 이동합니다.",
         ]}
@@ -398,23 +399,43 @@ export function ScoutWorkbench() {
           <label className="match-video-picker">
             경기 영상
             <select
-              value={matchVideoId}
+              value={uploadedName ? "" : matchVideoId}
               aria-label="스카우트 경기 영상"
               onChange={(e) => {
-                const hit = MATCH_VIDEOS.find((v) => v.id === e.target.value);
+                const id = e.target.value;
+                if (!id) return;
+                const hit = MATCH_VIDEOS.find((v) => v.id === id);
                 if (!hit) return;
+                setUploadedName(null);
                 setMatchVideoId(hit.id);
                 setVideoSrc(hit.src);
+                setMediaDuration(hit.approxDurationSec);
                 setVideoClock(0);
                 setStatus(`${hit.label} 로드 · ${hit.sourceFile}`);
               }}
             >
+              {uploadedName ? <option value="">업로드 파일 사용 중</option> : null}
               {MATCH_VIDEOS.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.label}
                 </option>
               ))}
             </select>
+          </label>
+          <label className="btn ghost file-btn scout-upload-btn">
+            영상 업로드 ({MAX_MATCH_DURATION_LABEL})
+            <input
+              type="file"
+              accept="video/mp4,video/webm,video/quicktime"
+              onChange={(e) => {
+                const next = e.target.files?.[0] ?? null;
+                if (!next) return;
+                setUploadedName(next.name);
+                setVideoSrc(URL.createObjectURL(next));
+                setVideoClock(0);
+                setStatus(`업로드: ${next.name} · ${MAX_MATCH_DURATION_LABEL}까지 지원`);
+              }}
+            />
           </label>
           <video
             ref={videoRef}
