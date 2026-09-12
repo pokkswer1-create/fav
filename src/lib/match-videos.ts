@@ -51,7 +51,39 @@ const FULL_MATCH_VIDEOS: MatchVideoOption[] = [
   },
 ];
 
+/** KakaoTalk shared DataVolley-style reference clips (for overlay comparison). */
+const STYLE_REF_VIDEOS: MatchVideoOption[] = [
+  {
+    id: "ref-style-1",
+    label: "참고 · DataVolley 스타일 #1",
+    src: "/match/ref/KakaoTalk_20260615_220309368.mp4",
+    durationLabel: "참고",
+    sourceFile: "KakaoTalk_ref_1.mp4",
+    approxDurationSec: 180,
+    kind: "preview",
+  },
+  {
+    id: "ref-style-2",
+    label: "참고 · DataVolley 스타일 #2",
+    src: "/match/ref/KakaoTalk_20260615_220337343.mp4",
+    durationLabel: "참고",
+    sourceFile: "KakaoTalk_ref_2.mp4",
+    approxDurationSec: 420,
+    kind: "preview",
+  },
+  {
+    id: "ref-style-3",
+    label: "참고 · DataVolley 스타일 #3",
+    src: "/match/ref/KakaoTalk_20260615_220353055.mp4",
+    durationLabel: "참고",
+    sourceFile: "KakaoTalk_ref_3.mp4",
+    approxDurationSec: 180,
+    kind: "preview",
+  },
+];
+
 const PREVIEW_MATCH_VIDEOS: MatchVideoOption[] = [
+  ...STYLE_REF_VIDEOS,
   {
     id: "set1-8min",
     label: "세트1 · 짧은 미리보기 (8분)",
