@@ -10,7 +10,7 @@ import {
   sweepTempFiles,
   UPLOAD_ROOT,
 } from "@/lib/video";
-import { clipsPayloadSchema } from "@/lib/schemas";
+import { clipsPayloadSchema, highlightOverlaySchema } from "@/lib/schemas";
 import {
   fileStreamResponse,
   isSamplePath,
@@ -73,6 +73,16 @@ export async function POST(request: Request) {
     if (!clipsParsed.success) {
       return NextResponse.json({ error: "클립 형식이 올바르지 않습니다." }, { status: 400 });
     }
+    let overlayMeta: Record<string, unknown> | null = null;
+    const overlayRaw = form.get("overlay");
+    if (typeof overlayRaw === "string" && overlayRaw.trim()) {
+      try {
+        const parsed = highlightOverlaySchema.safeParse(JSON.parse(overlayRaw));
+        if (parsed.success) overlayMeta = parsed.data;
+      } catch {
+        // ignore malformed overlay; defaults apply
+      }
+    }
     const file = form.get("video");
 
     let sourcePath = "";
@@ -89,7 +99,9 @@ export async function POST(request: Request) {
       }
     }
 
-    const result = await withHeavyJob(() => renderHighlightReel(sourcePath, clipsParsed.data));
+    const result = await withHeavyJob(() =>
+      renderHighlightReel(sourcePath, clipsParsed.data, overlayMeta),
+    );
     workDir = result.workDir;
 
     const nodeStream = createReadStream(result.outputPath);

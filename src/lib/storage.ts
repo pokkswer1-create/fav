@@ -33,6 +33,9 @@ export interface EditorBridgePayload {
   matchId?: string;
   message?: string;
   mediaDurationSec?: number;
+  /** DataVolley highlight overlay team names */
+  homeName?: string;
+  awayName?: string;
 }
 
 export interface CustomRosterPlayer {

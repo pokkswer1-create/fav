@@ -303,6 +303,8 @@ export function ScoutWorkbench() {
       clips: aligned,
       matchId: session.matchId,
       mediaDurationSec: duration,
+      homeName: rosters.homeName,
+      awayName: rosters.awayName,
       message: skillOnly
         ? `필터 ${skillDraft.skill}${skillDraft.effect} 클립`
         : "프로 코딩/스카우트 클립",
@@ -396,6 +398,8 @@ export function ScoutWorkbench() {
       clips,
       matchId: session.matchId,
       mediaDurationSec: duration,
+      homeName: rosters.homeName,
+      awayName: rosters.awayName,
       message: onlyPlayer
         ? `#${selectedPlayer?.number} 스카우트 타임스탬프 클립`
         : "스카우트 타임스탬프 전체 클립",

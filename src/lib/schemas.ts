@@ -57,8 +57,25 @@ export const videoClipSchema = z.object({
   playerId: z.string().max(64).optional(),
   playerName: z.string().max(40).optional(),
   playerNumber: z.number().int().min(0).max(99).optional(),
+  skill: z.string().max(8).optional(),
+  effect: z.string().max(4).optional(),
+  combination: z.string().max(24).optional(),
+  skillLine: z.string().max(48).optional(),
+  homeScore: z.number().int().min(0).max(99).optional(),
+  awayScore: z.number().int().min(0).max(99).optional(),
+  setIndex: z.number().int().min(0).max(9).optional(),
+  serveTeam: z.enum(["home", "away", "none"]).optional(),
 });
 
 export const clipsPayloadSchema = z.array(videoClipSchema).min(1).max(20);
+
+export const highlightOverlaySchema = z.object({
+  homeName: z.string().min(1).max(40).default("FAV"),
+  awayName: z.string().min(1).max(40).default("AWAY"),
+  includeTitleCard: z.boolean().optional().default(true),
+  titleSubtitle: z.string().max(60).optional().default("Total Analysis"),
+  showCourtLines: z.boolean().optional().default(true),
+  showLogo: z.boolean().optional().default(true),
+});
 
 export const rosterSchema = z.array(playerStatsSchema).max(40);

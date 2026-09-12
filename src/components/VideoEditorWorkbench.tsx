@@ -75,6 +75,8 @@ export function VideoEditorWorkbench() {
   const [matchVideoId, setMatchVideoId] = useState(DEFAULT_MATCH_VIDEO.id);
   const [previewUrl, setPreviewUrl] = useState(DEFAULT_MATCH_VIDEO.src);
   const [bridgeReady, setBridgeReady] = useState(false);
+  const [overlayHomeName, setOverlayHomeName] = useState(demoMatch.home.name);
+  const [overlayAwayName, setOverlayAwayName] = useState(demoMatch.away.name);
   const [catalog, setCatalog] = useState<MatchVideoOption[]>(
     () => MATCH_VIDEOS.filter((v) => v.kind === "preview"),
   );
@@ -144,6 +146,8 @@ export function VideoEditorWorkbench() {
       return;
     }
     if (payload.playerNumber) setSelectedNumber(payload.playerNumber);
+    if (payload.homeName) setOverlayHomeName(payload.homeName);
+    if (payload.awayName) setOverlayAwayName(payload.awayName);
     if (payload.mediaDurationSec && payload.mediaDurationSec > 0) {
       setMediaDuration(payload.mediaDurationSec);
     }
@@ -341,6 +345,14 @@ export function VideoEditorWorkbench() {
       const form = new FormData();
       if (file) form.append("video", file);
       form.append("clips", JSON.stringify(validClips));
+      form.append("overlay", JSON.stringify({
+        homeName: overlayHomeName,
+        awayName: overlayAwayName,
+        includeTitleCard: true,
+        titleSubtitle: "Total Analysis",
+        showCourtLines: true,
+        showLogo: true,
+      }));
 
       const res = await apiFetch("/api/video/highlights", {
         method: "POST",
@@ -396,7 +408,7 @@ export function VideoEditorWorkbench() {
         steps={[
           `① 전체 세트(또는 업로드, ${MAX_MATCH_DURATION_LABEL})를 고릅니다.`,
           "② 스카우트 스탬프·번호 찍기로 컷을 만듭니다 (자동 감지/OCR은 짧은 영상용).",
-          "③ 하이라이트 생성 시 해당 구간만 서버로 보냅니다.",
+          "③ 하이라이트 생성 시 DataVolley 스타일(스코어보드·선수 배너·로고·코트 라인)이 합성됩니다.",
         ]}
       />
 

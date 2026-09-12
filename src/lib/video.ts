@@ -1,11 +1,19 @@
 import { spawn } from "node:child_process";
-import { promises as fs } from "node:fs";
+import { existsSync, promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { VideoClipMarker } from "./types";
 import { removePath, probeMedia } from "./media-validate";
 import { SafeHttpError, logServerError } from "./security";
 import { alignClipsToDuration } from "./clip-align";
+import {
+  buildHighlightOverlayFilterComplex,
+  buildTitleCardDrawtext,
+  defaultOverlayAssetPaths,
+  overlayOptionsForClip,
+  resolveOverlayFont,
+  type HighlightMatchOverlay,
+} from "./highlight-overlay";
 
 export const UPLOAD_ROOT = path.join("/tmp", "fav-uploads");
 export const RENDER_ROOT = path.join("/tmp", "fav-renders");
@@ -65,9 +73,121 @@ export function validateClips(clips: VideoClipMarker[]): VideoClipMarker[] {
   return cleaned;
 }
 
+const DEFAULT_OVERLAY: HighlightMatchOverlay = {
+  homeName: "FAV",
+  awayName: "서울 윙스",
+  includeTitleCard: true,
+  titleSubtitle: "Total Analysis",
+  showCourtLines: true,
+  showLogo: true,
+};
+
+async function renderTitleCardPart(
+  workDir: string,
+  match: HighlightMatchOverlay,
+): Promise<string | null> {
+  if (match.includeTitleCard === false) return null;
+  const font = resolveOverlayFont();
+  const draw = buildTitleCardDrawtext({
+    homeName: match.homeName,
+    awayName: match.awayName,
+    subtitle: match.titleSubtitle ?? "Total Analysis",
+    fontFile: font,
+  });
+  const part = path.join(workDir, "part-title.mp4");
+  await run("ffmpeg", [
+    "-y",
+    "-f",
+    "lavfi",
+    "-i",
+    "color=c=0x0B1220:s=1280x720:d=2.2",
+    "-f",
+    "lavfi",
+    "-i",
+    "anullsrc=channel_layout=stereo:sample_rate=44100",
+    "-vf",
+    draw,
+    "-t",
+    "2.2",
+    "-c:v",
+    "libx264",
+    "-preset",
+    "veryfast",
+    "-crf",
+    "23",
+    "-c:a",
+    "aac",
+    "-shortest",
+    "-movflags",
+    "+faststart",
+    part,
+  ]);
+  return part;
+}
+
+async function encodeOverlayClip(
+  sourcePath: string,
+  clip: VideoClipMarker,
+  partPath: string,
+  match: HighlightMatchOverlay,
+  assets: { logoPath: string; courtLinesPath: string },
+): Promise<void> {
+  const hasLogo = match.showLogo !== false && existsSync(assets.logoPath);
+  const hasLines = match.showCourtLines !== false && existsSync(assets.courtLinesPath);
+  const opts = overlayOptionsForClip(clip, {
+    ...match,
+    showLogo: hasLogo,
+    showCourtLines: hasLines,
+  });
+
+  let filter = buildHighlightOverlayFilterComplex(opts);
+  const args: string[] = [
+    "-y",
+    "-ss",
+    String(clip.startSec),
+    "-to",
+    String(clip.endSec),
+    "-i",
+    sourcePath,
+  ];
+
+  if (hasLogo && hasLines) {
+    args.push("-i", assets.logoPath, "-i", assets.courtLinesPath);
+  } else if (hasLogo) {
+    args.push("-i", assets.logoPath);
+  } else if (hasLines) {
+    args.push("-i", assets.courtLinesPath);
+    filter = filter.replaceAll("[2:v]", "[1:v]");
+  }
+
+  args.push(
+    "-filter_complex",
+    filter,
+    "-map",
+    "[vout]",
+    "-map",
+    "0:a?",
+    "-c:v",
+    "libx264",
+    "-preset",
+    "veryfast",
+    "-crf",
+    "23",
+    "-c:a",
+    "aac",
+    "-shortest",
+    "-movflags",
+    "+faststart",
+    partPath,
+  );
+
+  await run("ffmpeg", args);
+}
+
 export async function renderHighlightReel(
   sourcePath: string,
   clips: VideoClipMarker[],
+  overlay?: Partial<HighlightMatchOverlay> | null,
 ): Promise<{ outputPath: string; clipCount: number; workDir: string }> {
   await ensureWorkDirs();
   const probe = await probeMedia(sourcePath);
@@ -79,32 +199,18 @@ export async function renderHighlightReel(
   const jobId = randomUUID();
   const workDir = path.join(RENDER_ROOT, jobId);
   await fs.mkdir(workDir, { recursive: true });
+  const match: HighlightMatchOverlay = { ...DEFAULT_OVERLAY, ...overlay };
+  const assets = defaultOverlayAssetPaths();
 
   try {
     const partPaths: string[] = [];
+    const title = await renderTitleCardPart(workDir, match);
+    if (title) partPaths.push(title);
+
     for (let i = 0; i < valid.length; i += 1) {
       const clip = valid[i];
       const part = path.join(workDir, `part-${String(i).padStart(2, "0")}.mp4`);
-      await run("ffmpeg", [
-        "-y",
-        "-ss",
-        String(clip.startSec),
-        "-to",
-        String(clip.endSec),
-        "-i",
-        sourcePath,
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-crf",
-        "23",
-        "-c:a",
-        "aac",
-        "-movflags",
-        "+faststart",
-        part,
-      ]);
+      await encodeOverlayClip(sourcePath, clip, part, match, assets);
       partPaths.push(part);
     }
 

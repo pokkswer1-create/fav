@@ -49,6 +49,11 @@ export function filterActionsToClips(
       label: `#${a.playerNumber ?? "-"} ${a.skill}${a.effect}${a.combination ? ` ${a.combination}` : ""}`,
       playerNumber: a.playerNumber,
       playerName: a.playerName,
+      skill: a.skill,
+      effect: a.effect,
+      combination: a.combination,
+      setIndex: a.setIndex,
+      serveTeam: a.team,
     };
   });
 

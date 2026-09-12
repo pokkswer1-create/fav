@@ -77,6 +77,8 @@ export function LibraryWorkbench() {
       clips,
       matchId: s.matchId,
       mediaDurationSec: duration,
+      homeName: s.homeName,
+      awayName: s.awayName,
       message: "보관함 스카우트 타임스탬프",
     });
     router.push("/editor?bridge=1");
