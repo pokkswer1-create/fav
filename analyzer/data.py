@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from functools import lru_cache
 
 import numpy as np
 import pandas as pd
 
+from analyzer.naver_live import (
+    fetch_ohlcv_and_flow,
+    fetch_realtime_index,
+    fetch_realtime_quotes,
+)
 from analyzer.rules import action_comment, risk_plan
 from analyzer.screener import (
     ScoreConfig,
@@ -59,62 +65,64 @@ def make_demo_flow(n: int = 140, seed: int = 1) -> pd.DataFrame:
     individual = -(foreign + institution)
     return pd.DataFrame(
         {
-            "기관합계": institution,
-            "기타법인": np.zeros(n),
-            "개인": individual,
             "외국인합계": foreign,
-            "전체": np.zeros(n),
+            "기관합계": institution,
+            "개인": individual,
         },
         index=idx,
     )
 
 
-@lru_cache(maxsize=512)
+@lru_cache(maxsize=256)
 def fetch_ohlcv(ticker: str, start: str, end: str, demo: bool = False) -> pd.DataFrame:
     if demo:
         return make_demo_ohlcv(seed=sum(map(ord, ticker)) % 10_000)
-    from pykrx import stock
-
-    df = stock.get_market_ohlcv_by_date(start, end, ticker)
-    if df is None or df.empty:
-        return pd.DataFrame()
-    out = df.copy()
-    if "거래대금" not in out.columns:
-        out["거래대금"] = out["종가"] * out["거래량"]
-    return out
+    ohlcv, _ = fetch_ohlcv_and_flow(ticker, days=160)
+    return ohlcv
 
 
-@lru_cache(maxsize=512)
+@lru_cache(maxsize=256)
 def fetch_investor_flow(ticker: str, start: str, end: str, demo: bool = False) -> pd.DataFrame:
     if demo:
         return make_demo_flow(seed=sum(map(ord, ticker)) % 10_000)
-    from pykrx import stock
-
-    df = stock.get_market_trading_value_by_date(start, end, ticker)
-    if df is None or df.empty:
-        return pd.DataFrame()
-    return df
+    _, flow = fetch_ohlcv_and_flow(ticker, days=160)
+    return flow
 
 
 def fetch_market_regime(demo: bool = False) -> dict:
     if demo:
-        return {"kospi_change_pct": 0.4, "market_smart_money": 1.0, "regime": "중립"}
-    start, end = period_range(1)
+        return {
+            "kospi_change_pct": 0.4,
+            "market_smart_money": 1.0,
+            "regime": "중립",
+            "kospi_price": 0.0,
+            "market_status": "DEMO",
+            "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "data_source": "demo",
+        }
     try:
-        from pykrx import stock
-
-        ohlcv = stock.get_index_ohlcv_by_date(start, end, "1001")
-        if ohlcv is None or len(ohlcv) < 2:
-            return {"kospi_change_pct": 0.0, "market_smart_money": 0.0, "regime": "중립"}
-        chg = (float(ohlcv["종가"].iloc[-1]) / float(ohlcv["종가"].iloc[-2]) - 1) * 100
+        idx = fetch_realtime_index("KOSPI")
+        chg = float(idx.get("change_pct") or 0.0)
         smart_proxy = 1.0 if chg >= 0 else -1.0
         return {
             "kospi_change_pct": round(chg, 2),
+            "kospi_price": float(idx.get("price") or 0.0),
             "market_smart_money": smart_proxy,
             "regime": market_regime(chg, smart_proxy),
+            "market_status": str(idx.get("market_status") or ""),
+            "as_of": str(idx.get("as_of") or ""),
+            "data_source": "naver_realtime",
         }
     except Exception:  # noqa: BLE001
-        return {"kospi_change_pct": 0.0, "market_smart_money": 0.0, "regime": "중립"}
+        return {
+            "kospi_change_pct": 0.0,
+            "kospi_price": 0.0,
+            "market_smart_money": 0.0,
+            "regime": "중립",
+            "market_status": "UNKNOWN",
+            "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "data_source": "fallback",
+        }
 
 
 def _forward_returns(ohlcv: pd.DataFrame, horizon: int = 5) -> list[float]:
@@ -136,14 +144,22 @@ def build_stock_snapshot(
     lookback_days: int = 20,
     demo: bool = False,
     regime: str = "중립",
+    quote: dict | None = None,
 ) -> dict:
-    start, end = period_range(6)
-    ohlcv = fetch_ohlcv(ticker, start, end, demo=demo)
-    flow = fetch_investor_flow(ticker, start, end, demo=demo)
+    if demo:
+        ohlcv = make_demo_ohlcv(seed=sum(map(ord, ticker)) % 10_000)
+        flow = make_demo_flow(seed=sum(map(ord, ticker)) % 10_000)
+        source = "demo"
+    else:
+        ohlcv, flow = fetch_ohlcv_and_flow(ticker, days=160)
+        source = "naver_live"
+
     score = score_money_in_price_flat(ohlcv, flow, ScoreConfig(lookback_days=lookback_days))
     three = analyze_period(ohlcv, flow, months=3)
     six = analyze_period(ohlcv, flow, months=6)
     latest = float(ohlcv["종가"].iloc[-1]) if not ohlcv.empty else 0.0
+    if quote and quote.get("price"):
+        latest = float(quote["price"])
     prob = estimate_upside_probability(_forward_returns(ohlcv), target_pct=5.0)
     row = {
         "ticker": ticker,
@@ -151,12 +167,19 @@ def build_stock_snapshot(
         "theme": theme,
         **score,
         "latest_close": latest,
+        "realtime_change_pct": float((quote or {}).get("change_pct") or 0.0),
+        "realtime_volume": float((quote or {}).get("volume") or 0.0),
+        "market_status": str((quote or {}).get("market_status") or ""),
+        "local_traded_at": str((quote or {}).get("local_traded_at") or ""),
         "analysis_3m": three,
         "analysis_6m": six,
         "probability": prob,
         "risk": risk_plan(latest or 1.0, float(score["score"])),
         "is_theme_leader": False,
+        "data_source": source,
     }
+    # normalize liquidity key for rules
+    row["liquidity_ok"] = bool(row.get("liquidity_ok", False))
     comment = action_comment(row, regime)
     row["action"] = comment["action"]
     row["reason"] = comment["reason"]
@@ -170,25 +193,40 @@ def scan_market(
     leaders_only: bool = True,
     flat_only: bool = True,
     demo: bool = False,
+    max_workers: int = 8,
 ) -> dict:
     regime_info = fetch_market_regime(demo=demo)
     regime = regime_info["regime"]
+    universe = stocks_for_theme(theme)
+    quotes: dict[str, dict] = {}
+    if not demo:
+        try:
+            quotes = fetch_realtime_quotes([x["ticker"] for x in universe])
+        except Exception:  # noqa: BLE001
+            quotes = {}
+
     raw: list[dict] = []
     errors: list[dict] = []
-    for item in stocks_for_theme(theme):
-        try:
-            raw.append(
-                build_stock_snapshot(
-                    item["ticker"],
-                    item["name"],
-                    item["theme"],
-                    lookback_days=lookback_days,
-                    demo=demo,
-                    regime=regime,
-                )
-            )
-        except Exception as exc:  # noqa: BLE001
-            errors.append({"ticker": item["ticker"], "name": item["name"], "error": str(exc)})
+
+    def _one(item: dict) -> dict:
+        return build_stock_snapshot(
+            item["ticker"],
+            item["name"],
+            item["theme"],
+            lookback_days=lookback_days,
+            demo=demo,
+            regime=regime,
+            quote=quotes.get(item["ticker"]),
+        )
+
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(_one, item): item for item in universe}
+        for fut in as_completed(futures):
+            item = futures[fut]
+            try:
+                raw.append(fut.result())
+            except Exception as exc:  # noqa: BLE001
+                errors.append({"ticker": item["ticker"], "name": item["name"], "error": str(exc)})
 
     candidates = screen_candidates(
         raw,
@@ -221,4 +259,6 @@ def scan_market(
         "candidates": refreshed,
         "errors": errors,
         "themes": list_themes(),
+        "scanned_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "mode": "demo" if demo else "live",
     }

@@ -1,6 +1,7 @@
-pykrx>=1.0.48
 pandas>=2.0.0
 numpy>=1.26.0
 pytest>=8.0.0
 streamlit>=1.32.0
 plotly>=5.18.0
+finance-datareader>=0.9.50
+lxml>=5.0.0

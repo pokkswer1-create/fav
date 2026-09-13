@@ -18,8 +18,11 @@ pip install -r requirements.txt
 PYTHONPATH=. streamlit run app.py
 ```
 
-사이드바에서 **데모 모드**를 켜면 샘플 데이터로 바로 확인할 수 있습니다.  
-끄면 `pykrx`로 실제 KRX 데이터를 조회합니다.
+기본값은 **실시간 데이터(네이버 증권)** 입니다.
+- 실시간 시세: polling API
+- 일봉/수급: stock.naver.com API (외인·기관·개인 순매수)
+- 사이드바에서 실시간 토글을 끄면 데모 샘플 데이터로 전환됩니다.
+- 장중에는 자동 새로고침(60초)을 켤 수 있습니다.
 
 ## 테스트
 
