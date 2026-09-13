@@ -230,6 +230,8 @@ export function AnalysisWorkbench() {
       clips: fromScout.length ? fromScout : undefined,
       matchId: match.id,
       mediaDurationSec: duration,
+      homeName: match.home.name,
+      awayName: match.away.name,
       message:
         fromScout.length > 0
           ? `#${p.number} 스카우트 타임스탬프 컷 (정확)`
@@ -254,6 +256,8 @@ export function AnalysisWorkbench() {
       autoTrack: false,
       matchId: match.id,
       mediaDurationSec: duration,
+      homeName: match.home.name,
+      awayName: match.away.name,
       message: clips.length
         ? fromActions.length
           ? "프로 코딩 기반 전체 컷"
@@ -282,6 +286,8 @@ export function AnalysisWorkbench() {
       clips,
       matchId: match.id,
       mediaDurationSec: duration,
+      homeName: match.home.name,
+      awayName: match.away.name,
       message: `필터 ${skill} 홈 클립`,
     });
     router.push("/editor?bridge=1");

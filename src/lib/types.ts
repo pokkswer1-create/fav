@@ -106,4 +106,14 @@ export interface VideoClipMarker {
   playerId?: string;
   playerName?: string;
   playerNumber?: number;
+  /** DataVolley overlay fields (optional — burned into highlight export) */
+  skill?: string;
+  effect?: string;
+  combination?: string;
+  skillLine?: string;
+  homeScore?: number;
+  awayScore?: number;
+  /** 0-based set index */
+  setIndex?: number;
+  serveTeam?: "home" | "away" | "none";
 }

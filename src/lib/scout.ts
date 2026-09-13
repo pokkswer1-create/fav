@@ -242,17 +242,33 @@ export function clipsFromScoutPoints(
   opts?: { padSec?: number; onlyPlayerNumber?: number },
 ): VideoClipMarker[] {
   const pad = opts?.padSec ?? 1.2;
-  const filtered = points
+  const stamped = points
     .filter((p) => typeof p.videoTimeSec === "number" && Number.isFinite(p.videoTimeSec))
-    .filter((p) =>
-      opts?.onlyPlayerNumber == null
-        ? true
-        : p.playerNumber === opts.onlyPlayerNumber,
-    )
-    .sort((a, b) => (a.videoTimeSec ?? 0) - (b.videoTimeSec ?? 0));
+    .sort((a, b) => {
+      if (a.setIndex !== b.setIndex) return a.setIndex - b.setIndex;
+      if (a.pointIndex !== b.pointIndex) return a.pointIndex - b.pointIndex;
+      return (a.videoTimeSec ?? 0) - (b.videoTimeSec ?? 0);
+    });
+
+  const scoreAfter = new Map<string, { home: number; away: number }>();
+  const scoreBySet = new Map<number, { home: number; away: number }>();
+  for (const p of stamped) {
+    const score = scoreBySet.get(p.setIndex) ?? { home: 0, away: 0 };
+    if (p.winner === "home") score.home += 1;
+    else score.away += 1;
+    scoreBySet.set(p.setIndex, { ...score });
+    scoreAfter.set(p.id, { ...score });
+  }
 
   const clips: VideoClipMarker[] = [];
-  for (const p of filtered) {
+  for (const p of stamped) {
+    if (
+      opts?.onlyPlayerNumber != null &&
+      p.playerNumber !== opts.onlyPlayerNumber
+    ) {
+      continue;
+    }
+    const score = scoreAfter.get(p.id) ?? { home: 0, away: 0 };
     const end = Math.min(durationSec, Number((p.videoTimeSec! + 0.4).toFixed(1)));
     const start = Math.max(0, Number((p.videoTimeSec! - pad).toFixed(1)));
     if (end <= start) continue;
@@ -265,6 +281,13 @@ export function clipsFromScoutPoints(
       playerId: p.playerId,
       playerName: p.playerName,
       playerNumber: p.playerNumber,
+      skill: p.endSkill,
+      effect: p.endEffect,
+      combination: p.combination,
+      homeScore: score.home,
+      awayScore: score.away,
+      setIndex: p.setIndex,
+      serveTeam: p.serving,
     });
   }
   return clips;
