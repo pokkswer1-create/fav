@@ -7,6 +7,7 @@ import { createDetectableSampleVideo } from "@/lib/scene-detect";
 import type { PlayerStats } from "@/lib/types";
 import { rosterSchema } from "@/lib/schemas";
 import { ensureWorkDirs, sweepTempFiles, UPLOAD_ROOT } from "@/lib/video";
+import { resolveBundledMatchPath } from "@/lib/match-source";
 import {
   assertDurationAllowedForAutoAnalyze,
   isSamplePath,
@@ -80,15 +81,22 @@ export async function POST(request: Request) {
     let jerseyNumber = 7;
     let rosterJson: string | undefined;
     let file: FormDataEntryValue | null = null;
+    let matchVideoId = "";
 
     if (contentType.includes("multipart/form-data")) {
       const form = await request.formData();
       file = form.get("video");
       jerseyNumber = Number(form.get("number") ?? 7);
       rosterJson = String(form.get("roster") ?? "") || undefined;
+      matchVideoId = String(form.get("matchVideoId") ?? "").trim();
     } else if (contentType.includes("application/json")) {
-      const body = (await request.json()) as { number?: number; roster?: PlayerStats[] };
+      const body = (await request.json()) as {
+        number?: number;
+        roster?: PlayerStats[];
+        matchVideoId?: string;
+      };
       jerseyNumber = Number(body.number ?? 7);
+      matchVideoId = String(body.matchVideoId ?? "").trim();
       if (body.roster) {
         const parsed = rosterSchema.safeParse(body.roster);
         if (!parsed.success) {
@@ -103,13 +111,20 @@ export async function POST(request: Request) {
     }
 
     let sourcePath = "";
+    let isDemoSample = false;
     if (file && typeof file !== "string" && "arrayBuffer" in file) {
       uploadPath = path.join(UPLOAD_ROOT, `${randomUUID()}-track.mp4`);
       await saveUploadFile(file as File, uploadPath);
       sourcePath = uploadPath;
     } else {
-      sourcePath = path.join(UPLOAD_ROOT, "sample-match.mp4");
-      await createDetectableSampleVideo(sourcePath);
+      const bundled = resolveBundledMatchPath(matchVideoId);
+      if (bundled) {
+        sourcePath = bundled;
+      } else {
+        sourcePath = path.join(UPLOAD_ROOT, "sample-match.mp4");
+        await createDetectableSampleVideo(sourcePath);
+        isDemoSample = true;
+      }
     }
 
     const probe = await probeMedia(sourcePath);
@@ -120,14 +135,19 @@ export async function POST(request: Request) {
       trackPlayerInVideo({
         videoPath: sourcePath,
         player,
-        // Demo sample: denser OCR. Uploads: sparse + no stats invention.
-        intervalSec: uploadPath ? 1.5 : 0.45,
-        allowStatsFallback: !uploadPath,
+        // Demo sample: denser OCR + stats fallback. Real match: sparse OCR, no invention.
+        intervalSec: isDemoSample ? 0.45 : 1.5,
+        allowStatsFallback: isDemoSample,
       }),
     );
 
     if (!result.clips.length) {
-      return NextResponse.json({ error: `#${jerseyNumber} 선수 구간을 찾지 못했습니다.` }, { status: 404 });
+      return NextResponse.json(
+        {
+          error: `#${jerseyNumber} 선수 구간을 찾지 못했습니다. 와이드 카메라에서는 OCR이 실패할 수 있습니다. ‘번호 찍기’로 마크한 뒤 컷을 만드세요.`,
+        },
+        { status: 404 },
+      );
     }
 
     return NextResponse.json(result);

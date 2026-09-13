@@ -6,6 +6,7 @@ import {
   detectHighlightCandidates,
 } from "@/lib/scene-detect";
 import { ensureWorkDirs, sweepTempFiles, UPLOAD_ROOT } from "@/lib/video";
+import { resolveBundledMatchPath } from "@/lib/match-source";
 import {
   assertDurationAllowedForAutoAnalyze,
   isSamplePath,
@@ -43,9 +44,11 @@ export async function POST(request: Request) {
     await sweepTempFiles();
     const contentType = request.headers.get("content-type") ?? "";
     let file: FormDataEntryValue | null = null;
+    let matchVideoId = "";
     if (contentType.includes("multipart/form-data")) {
       const form = await request.formData();
       file = form.get("video");
+      matchVideoId = String(form.get("matchVideoId") ?? "").trim();
     }
 
     let sourcePath = "";
@@ -54,8 +57,13 @@ export async function POST(request: Request) {
       await saveUploadFile(file as File, uploadPath);
       sourcePath = uploadPath;
     } else {
-      sourcePath = path.join(UPLOAD_ROOT, "sample-match.mp4");
-      await createDetectableSampleVideo(sourcePath);
+      const bundled = resolveBundledMatchPath(matchVideoId);
+      if (bundled) {
+        sourcePath = bundled;
+      } else {
+        sourcePath = path.join(UPLOAD_ROOT, "sample-match.mp4");
+        await createDetectableSampleVideo(sourcePath);
+      }
     }
 
     const probe = await probeMedia(sourcePath);

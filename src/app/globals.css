@@ -1045,6 +1045,8 @@ a {
   font-size: 0.78rem;
   font-weight: 700;
   border: 1px solid rgba(255, 45, 149, 0.35);
+  pointer-events: none;
+  z-index: 2;
 }
 
 .mark-panel {

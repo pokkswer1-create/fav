@@ -11,6 +11,7 @@ import {
   UPLOAD_ROOT,
 } from "@/lib/video";
 import { clipsPayloadSchema, highlightOverlaySchema } from "@/lib/schemas";
+import { resolveBundledMatchPath } from "@/lib/match-source";
 import {
   fileStreamResponse,
   isSamplePath,
@@ -84,6 +85,7 @@ export async function POST(request: Request) {
       }
     }
     const file = form.get("video");
+    const matchVideoId = String(form.get("matchVideoId") ?? "").trim();
 
     let sourcePath = "";
     if (file && typeof file !== "string" && "arrayBuffer" in file) {
@@ -91,11 +93,16 @@ export async function POST(request: Request) {
       await saveUploadFile(file as File, uploadPath);
       sourcePath = uploadPath;
     } else {
-      sourcePath = path.join(UPLOAD_ROOT, "sample-match.mp4");
-      try {
-        await fs.access(sourcePath);
-      } catch {
-        await createSampleMatchVideo(sourcePath);
+      const bundled = resolveBundledMatchPath(matchVideoId);
+      if (bundled) {
+        sourcePath = bundled;
+      } else {
+        sourcePath = path.join(UPLOAD_ROOT, "sample-match.mp4");
+        try {
+          await fs.access(sourcePath);
+        } catch {
+          await createSampleMatchVideo(sourcePath);
+        }
       }
     }
 

@@ -234,13 +234,22 @@ export function VideoEditorWorkbench() {
     void video.play().catch(() => undefined);
   }
 
+  function appendEditorVideoSource(form: FormData) {
+    if (file) {
+      form.append("video", file);
+      return;
+    }
+    // Catalog playback has no File — tell APIs which bundled match to use.
+    if (matchVideoId) form.append("matchVideoId", matchVideoId);
+  }
+
   async function autoDetectScenes() {
     try {
       setDetecting(true);
       setError(null);
       setStatus(null);
       const form = new FormData();
-      if (file) form.append("video", file);
+      appendEditorVideoSource(form);
       const res = await apiFetch("/api/video/detect", { method: "POST", body: form });
       const data = (await res.json()) as {
         error?: string;
@@ -286,7 +295,7 @@ export function VideoEditorWorkbench() {
       setError(null);
       setStatus(null);
       const form = new FormData();
-      if (file) form.append("video", file);
+      appendEditorVideoSource(form);
       form.append("number", String(player.number));
       form.append("roster", JSON.stringify(ROSTER));
       const res = await apiFetch("/api/video/track-player", { method: "POST", body: form });
@@ -343,7 +352,7 @@ export function VideoEditorWorkbench() {
       }
 
       const form = new FormData();
-      if (file) form.append("video", file);
+      appendEditorVideoSource(form);
       form.append("clips", JSON.stringify(validClips));
       form.append("overlay", JSON.stringify({
         homeName: overlayHomeName,
