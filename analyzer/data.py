@@ -18,6 +18,7 @@ from analyzer.screener import (
     analyze_period,
     estimate_upside_probability,
     market_regime,
+    pick_stocks,
     score_money_in_price_flat,
     screen_candidates,
 )
@@ -234,6 +235,15 @@ def scan_market(
         leaders_only=leaders_only,
         flat_only=flat_only,
     )
+    picks = pick_stocks(raw, top_n=5)
+    refreshed_picks = []
+    for row in picks:
+        comment = action_comment(row, regime)
+        item = dict(row)
+        item["action"] = comment["action"]
+        item["reason"] = comment["reason"]
+        refreshed_picks.append(item)
+
     refreshed = []
     for row in candidates:
         comment = action_comment(row, regime)
@@ -256,6 +266,7 @@ def scan_market(
         "regime": regime_info,
         "theme_top": theme_top,
         "all": raw,
+        "picks": refreshed_picks,
         "candidates": refreshed,
         "errors": errors,
         "themes": list_themes(),

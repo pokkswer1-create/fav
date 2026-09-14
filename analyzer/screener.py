@@ -229,6 +229,74 @@ def screen_candidates(
     return sorted(out, key=lambda r: r.get("score", 0), reverse=True)
 
 
+def _pick_composite(row: dict[str, Any]) -> float:
+    """필터와 별개로, 스캔 데이터만으로 상대 우량도를 계산."""
+    score = float(row.get("score", 0))
+    smart = float(row.get("smart_money_net", 0))
+    price_chg = float(row.get("price_change_pct", 0))
+    consec = int(row.get("consecutive_smart_days", 0))
+    leader_bonus = 15.0 if row.get("is_theme_leader") else 0.0
+    flat_bonus = 20.0 if row.get("is_flat_setup") else max(0.0, 12.0 - abs(price_chg))
+    money_bonus = min(max(smart / 1e9, 0.0) * 5.0, 25.0)
+    pick = score + leader_bonus + flat_bonus + money_bonus + consec * 3.0
+    if price_chg > 20:
+        pick *= 0.35
+    elif price_chg > 12:
+        pick *= 0.7
+    if smart <= 0:
+        pick *= 0.35
+    if not row.get("liquidity_ok", False):
+        pick *= 0.5
+    return round(float(pick), 2)
+
+
+def pick_why(row: dict[str, Any]) -> str:
+    bits: list[str] = []
+    smart_eok = float(row.get("smart_money_net", 0)) / 1e8
+    price_chg = float(row.get("price_change_pct", 0))
+    if smart_eok > 0:
+        bits.append(f"스마트머니 +{smart_eok:.1f}억")
+    if row.get("is_flat_setup"):
+        bits.append("수급↑·가격정체 셋업")
+    elif price_chg <= 8:
+        bits.append(f"기간수익률 {price_chg:+.1f}%로 아직 덜 상승")
+    if row.get("is_theme_leader"):
+        bits.append(f"{row.get('theme', '')} 테마 대장권")
+    consec = int(row.get("consecutive_smart_days", 0))
+    if consec >= 2:
+        bits.append(f"연속수급 {consec}일")
+    prob = row.get("probability") or {}
+    if float(prob.get("prob_target_pct", 0) or 0) >= 40:
+        bits.append(f"+5%확률 {prob.get('prob_target_pct')}%")
+    if not bits:
+        return "상대 점수 상위이나 핵심 셋업은 약합니다."
+    return " · ".join(bits)
+
+
+def pick_stocks(
+    rows: list[dict[str, Any]],
+    top_n: int = 5,
+    min_smart_money: float = 0.0,
+) -> list[dict[str, Any]]:
+    """오늘 데이터 기준으로 고를 종목을 항상 Top-N으로 반환."""
+    ranked = theme_leader_rank(rows)
+    enriched: list[dict[str, Any]] = []
+    for row in ranked:
+        if float(row.get("smart_money_net", 0)) < min_smart_money:
+            continue
+        item = dict(row)
+        item["pick_score"] = _pick_composite(item)
+        item["pick_why"] = pick_why(item)
+        enriched.append(item)
+    enriched.sort(key=lambda r: r.get("pick_score", 0), reverse=True)
+    out: list[dict[str, Any]] = []
+    for i, item in enumerate(enriched[: max(top_n, 0)], start=1):
+        item["pick_rank"] = i
+        item["pick_label"] = f"추천 {i}위"
+        out.append(item)
+    return out
+
+
 def estimate_upside_probability(
     historical_forward_returns: list[float],
     target_pct: float = 5.0,

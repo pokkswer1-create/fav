@@ -6,6 +6,7 @@ from analyzer.screener import (
     analyze_period,
     estimate_upside_probability,
     market_regime,
+    pick_stocks,
     score_money_in_price_flat,
     screen_candidates,
     theme_leader_rank,
@@ -104,3 +105,62 @@ def test_probability_and_rules():
         "중립",
     )
     assert comment["action"] == "매수관심"
+    defense = action_comment(
+        {
+            "liquidity_ok": True,
+            "price_change_pct": 2,
+            "is_flat_setup": True,
+            "is_theme_leader": True,
+            "score": 70,
+            "smart_money_net": 1e9,
+        },
+        "방어",
+    )
+    assert defense["action"] == "관망축소"
+
+
+def test_pick_stocks_always_ranks_top_n():
+    rows = [
+        {
+            "ticker": "1",
+            "name": "A",
+            "theme": "HBM",
+            "score": 80,
+            "smart_money_net": 9e9,
+            "price_change_pct": 1,
+            "consecutive_smart_days": 3,
+            "is_flat_setup": True,
+            "liquidity_ok": True,
+            "probability": {"prob_target_pct": 55},
+        },
+        {
+            "ticker": "2",
+            "name": "B",
+            "theme": "HBM",
+            "score": 40,
+            "smart_money_net": -1e9,
+            "price_change_pct": 25,
+            "consecutive_smart_days": 0,
+            "is_flat_setup": False,
+            "liquidity_ok": True,
+            "probability": {"prob_target_pct": 10},
+        },
+        {
+            "ticker": "3",
+            "name": "C",
+            "theme": "2차전지",
+            "score": 65,
+            "smart_money_net": 2e9,
+            "price_change_pct": 3,
+            "consecutive_smart_days": 2,
+            "is_flat_setup": True,
+            "liquidity_ok": True,
+            "probability": {"prob_target_pct": 48},
+        },
+    ]
+    picks = pick_stocks(rows, top_n=2)
+    assert len(picks) == 2
+    assert picks[0]["pick_rank"] == 1
+    assert picks[0]["ticker"] == "1"
+    assert "스마트머니" in picks[0]["pick_why"]
+    assert picks[0]["pick_score"] >= picks[1]["pick_score"]
