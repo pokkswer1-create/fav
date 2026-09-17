@@ -12,7 +12,19 @@
 - 손절/익절/시간손절·비중 가이드
 - 매수관심/관망축소/관심목록/회피 코멘트
 
-## 실행
+## 공개 웹 (Vercel)
+
+브라우저용 배포본은 `web/` 입니다.
+
+- 프로덕션: https://theme-flow-analyzer-pokkswer1-4079s-projects.vercel.app
+- Vercel 팀 기본 **Deployment Protection(SSO)** 이 켜져 있으면 로그인 화면이 뜹니다.  
+  프로젝트 Settings → Deployment Protection → Vercel Authentication 을 끄면 누구나 볼 수 있습니다.
+
+```bash
+cd web && npx vercel --prod
+```
+
+## 로컬 실행 (Streamlit)
 
 ```bash
 pip install -r requirements.txt
