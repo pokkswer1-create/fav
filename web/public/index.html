@@ -109,6 +109,17 @@
     .status { color: var(--muted); font-size: 0.85rem; min-height: 1.2em; }
     .err { color: var(--bad); }
     .scroll { overflow-x: auto; }
+    .help {
+      background: rgba(43, 176, 166, 0.1);
+      border: 1px solid rgba(43, 176, 166, 0.28);
+      border-radius: 14px;
+      padding: 12px 14px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.55;
+      margin-bottom: 18px;
+    }
+    .help strong { color: var(--accent); display: block; margin-bottom: 4px; }
     @media (max-width: 800px) {
       .bar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
@@ -117,7 +128,15 @@
 <body>
   <div class="wrap">
     <h1>테마 수급 종목 분석기</h1>
-    <p class="cap">네이버 증권 실시간 시세 + 외인/기관/개인 수급으로 오늘 고를 종목을 데이터 기준으로 뽑아줍니다. 투자 권유가 아닙니다.</p>
+    <p class="cap">초보자도 쉽게: 큰손 돈의흐름 · 가격이 아직 안 오른지 · 고점 돌파 · 과거 비슷한 경우의 평균 성적을 보여줍니다. 투자 권유가 아닙니다.</p>
+
+    <div class="help">
+      <strong>읽는 법</strong>
+      1) 액션만 먼저 보기 (매수관심/관망/관심목록/회피)
+      2) ‘왜?’는 쉬운 말 설명
+      3) 과거 성적은 참고용(미래 보장 X)
+      4) 매수관심은 셋업+고점 돌파가 겹칠 때만
+    </div>
 
     <div class="row">
       <select id="theme">
@@ -149,7 +168,7 @@
         <thead>
           <tr>
             <th>순위</th><th>종목</th><th>테마</th><th>액션</th><th>추천점수</th>
-            <th>현재가</th><th>실시간%</th><th>기간%</th><th>스마트머니(억)</th><th>고른이유</th>
+            <th>현재가</th><th>실시간%</th><th>기간%</th><th>큰손(억)</th><th>돌파/기대</th><th>초보 설명</th>
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
@@ -207,17 +226,22 @@
       cards.innerHTML = (data.picks || []).map((p) => {
         const chg = Number(p.realtime_change_pct || 0);
         const cls = chg >= 0 ? "up" : "down";
+        const exp = p.expectancy || {};
         return `
           <div class="card">
             <div class="rank">${p.pick_label || ""}</div>
             <h3>${p.name}</h3>
             <div class="price">${fmt(p.latest_close)} <span class="${cls}">${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%</span></div>
             <div class="action ${actionClass(p.action)}">${p.action || "-"}</div>
-            <div class="why">추천점수 ${p.pick_score} · 스마트머니 ${eok(p.smart_money_net)}억<br/>${p.pick_why || ""}</div>
+            <div class="why">${p.reason || ""}</div>
+            <div class="why" style="margin-top:8px">${p.beginner_summary || p.pick_why || ""}</div>
+            <div class="why" style="margin-top:6px">돌파 ${p.is_breakout ? "O" : "X"} · 기대수익 ${Number(exp.expectancy_pct || 0).toFixed(1)}% (승률 ${exp.win_rate_pct || 0}% / 표본 ${exp.sample_size || 0})</div>
           </div>`;
       }).join("") || "<p class='status'>추천 없음</p>";
 
-      document.getElementById("tbody").innerHTML = (data.picks || []).map((p) => `
+      document.getElementById("tbody").innerHTML = (data.picks || []).map((p) => {
+        const exp = p.expectancy || {};
+        return `
         <tr>
           <td>${p.pick_rank}</td>
           <td>${p.name} (${p.ticker})</td>
@@ -228,8 +252,10 @@
           <td>${Number(p.realtime_change_pct || 0).toFixed(2)}</td>
           <td>${Number(p.price_change_pct || 0).toFixed(2)}</td>
           <td>${eok(p.smart_money_net)}</td>
-          <td>${p.pick_why || ""}</td>
-        </tr>`).join("");
+          <td>${p.is_breakout ? "O" : ""} / ${Number(exp.expectancy_pct || 0).toFixed(1)}%</td>
+          <td>${p.beginner_summary || p.pick_why || ""}</td>
+        </tr>`;
+      }).join("");
 
       document.getElementById("themes").innerHTML = (data.theme_top || []).map((t) => `
         <tr><td>${t.theme}</td><td>${eok(t.smart_money_net)}</td></tr>`).join("");

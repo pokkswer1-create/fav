@@ -11,6 +11,11 @@ import {
   pickStocks,
   scoreMoneyInPriceFlat,
 } from "../lib/screener.js";
+import {
+  backtestSetupExpectancy,
+  beginnerExplain,
+  detectBreakout,
+} from "../lib/signals.js";
 
 export const config = {
   maxDuration: 60,
@@ -45,12 +50,15 @@ async function mapPool(items, concurrency, worker) {
 }
 
 async function buildSnapshot(item, lookbackDays, quote) {
+  const days = Math.max(lookbackDays + 80, 120);
   const [ohlcv, flowRaw] = await Promise.all([
-    fetchDailyPrices(item.ticker, Math.max(lookbackDays + 5, 40)),
-    fetchInvestorTrend(item.ticker, Math.max(lookbackDays + 5, 40)),
+    fetchDailyPrices(item.ticker, days),
+    fetchInvestorTrend(item.ticker, Math.min(days, 80)),
   ]);
   const flow = alignFlow(ohlcv, flowRaw);
   const score = scoreMoneyInPriceFlat(ohlcv, flow, lookbackDays);
+  const breakout = detectBreakout(ohlcv, lookbackDays);
+  const expectancy = backtestSetupExpectancy(ohlcv, flow, lookbackDays);
   const latest = quote?.price || (ohlcv.length ? ohlcv[ohlcv.length - 1].close : 0);
   return {
     ticker: item.ticker,
@@ -59,6 +67,9 @@ async function buildSnapshot(item, lookbackDays, quote) {
     ...score,
     latest_close: latest,
     realtime_change_pct: quote?.change_pct || 0,
+    is_breakout: !!breakout.is_breakout,
+    breakout,
+    expectancy,
     data_source: "naver_live",
   };
 }
@@ -99,7 +110,15 @@ export default async function handler(req, res) {
 
     const picks = pickStocks(raw, topN).map((row) => {
       const comment = actionComment(row, regime);
-      return { ...row, action: comment.action, reason: comment.reason };
+      const item = { ...row, action: comment.action, reason: comment.reason };
+      const explain = beginnerExplain(item, regime);
+      return {
+        ...item,
+        beginner_summary: explain.summary,
+        beginner_backtest: explain.backtest,
+        beginner_guide: explain.guide,
+        beginner_full: explain.full,
+      };
     });
 
     const themeScores = {};

@@ -120,12 +120,17 @@ export function pickWhy(row) {
   const bits = [];
   const smartEok = Number(row.smart_money_net || 0) / 1e8;
   const priceChg = Number(row.price_change_pct || 0);
-  if (smartEok > 0) bits.push(`스마트머니 +${smartEok.toFixed(1)}억`);
-  if (row.is_flat_setup) bits.push("수급↑·가격정체 셋업");
-  else if (priceChg <= 8) bits.push(`기간수익률 ${priceChg >= 0 ? "+" : ""}${priceChg.toFixed(1)}%로 아직 덜 상승`);
-  if (row.is_theme_leader) bits.push(`${row.theme} 테마 대장권`);
-  if ((row.consecutive_smart_days || 0) >= 2) bits.push(`연속수급 ${row.consecutive_smart_days}일`);
-  return bits.length ? bits.join(" · ") : "상대 점수 상위이나 핵심 셋업은 약합니다.";
+  if (smartEok > 0) bits.push(`큰손 유입 +${smartEok.toFixed(1)}억`);
+  if (row.is_flat_setup) bits.push("돈은 들어오는데 가격은 아직 조용");
+  else if (priceChg <= 8) bits.push(`가격 변화 ${priceChg >= 0 ? "+" : ""}${priceChg.toFixed(1)}%로 아직 덜 오름`);
+  if (row.is_theme_leader) bits.push(`${row.theme} 테마에서 돈이 더 몰림`);
+  if ((row.consecutive_smart_days || 0) >= 2) bits.push(`${row.consecutive_smart_days}일 연속 큰손 매수`);
+  if (row.is_breakout) bits.push("최근 고점 돌파 확인");
+  const exp = row.expectancy || {};
+  if ((exp.sample_size || 0) >= 5) {
+    bits.push(`과거 유사셋업 기대수익 ${Number(exp.expectancy_pct || 0) >= 0 ? "+" : ""}${Number(exp.expectancy_pct || 0).toFixed(1)}%`);
+  }
+  return bits.length ? bits.join(" · ") : "상대적으로 나아 보이지만, 핵심 조건은 약해요.";
 }
 
 export function pickStocks(rows, topN = 5) {
@@ -149,48 +154,39 @@ export function marketRegime(kospiChangePct, marketSmartMoney) {
 
 export function actionComment(row, regime) {
   if (!row.liquidity_ok) {
-    return { action: "회피", reason: "거래대금 부족으로 체결/슬리피지 위험이 큽니다." };
+    return { action: "회피", reason: "거래가 너무 적어 원하는 가격에 사기/팔기 어려울 수 있어요." };
   }
   if (Number(row.price_change_pct || 0) > 15) {
-    return { action: "회피", reason: "이미 급등해 추격 매수 구간입니다." };
+    return { action: "회피", reason: "이미 많이 올라 지금 따라 사면 고점에 잡을 위험이 커요." };
   }
-  const strong =
-    row.is_flat_setup && row.is_theme_leader && Number(row.score || 0) >= 55;
-  const soft =
-    Number(row.smart_money_net || 0) > 0 && Number(row.price_change_pct || 100) <= 8;
+  const setupReady = row.is_flat_setup && row.is_theme_leader && Number(row.score || 0) >= 55;
+  const soft = Number(row.smart_money_net || 0) > 0 && Number(row.price_change_pct || 100) <= 8;
+  const breakout = !!row.is_breakout;
+  const exp = row.expectancy || {};
+  const expectancyOk = Number(exp.expectancy_pct || 0) >= 0 && Number(exp.sample_size || 0) >= 5;
 
   if (regime === "방어") {
-    if (strong) {
-      return {
-        action: "관망축소",
-        reason: "데이터상 우량 셋업이지만 시장이 방어 구간이라 비중을 줄이거나 분할만 고려합니다.",
-      };
+    if (setupReady && breakout) {
+      return { action: "관망축소", reason: "돌파까지 나왔지만 시장이 약해요. 사더라도 아주 소액만, 아니면 관망하세요." };
     }
-    if (soft || Number(row.pick_score || row.score || 0) >= 40) {
-      return {
-        action: "관심목록",
-        reason: "상대적으로 수급이 나은 편이나 방어장에서는 매수보다 관찰 우선입니다.",
-      };
+    if (setupReady || soft || Number(row.pick_score || row.score || 0) >= 40) {
+      return { action: "관심목록", reason: "종목은 괜찮아 보여도 시장이 약해서, 지금은 리스트에만 두고 지켜보세요." };
     }
-    return { action: "회피", reason: "시장 방어 + 종목 셋업 부족으로 신규 진입을 미룹니다." };
+    return { action: "회피", reason: "시장도 약하고 종목 조건도 약해서 지금은 사지 않는 게 좋아요." };
   }
-  if (strong) {
-    return {
-      action: "매수관심",
-      reason: "테마 대장 + 스마트머니 유입 + 가격 미반영 조건이 겹칩니다.",
-    };
+  if (setupReady && breakout) {
+    if (expectancyOk || Number(exp.sample_size || 0) < 5) {
+      return { action: "매수관심", reason: "큰손 유입 + 가격 대기 + 테마 대장 + 고점 돌파가 겹쳤어요. 손절을 꼭 지키세요." };
+    }
+  }
+  if (setupReady && !breakout) {
+    return { action: "관망", reason: "조건은 좋은데 아직 고점을 뚫지 못했어요. 돌파 나오면 매수 후보로 올릴 수 있어요." };
   }
   if (soft) {
-    return {
-      action: "관망",
-      reason: "수급은 들어오나 추가 확인(돌파/연속수급)이 필요합니다.",
-    };
+    return { action: "관망", reason: "돈은 들어오는데 확신이 덜해요. 며칠 더 수급·돌파를 확인하세요." };
   }
   if (Number(row.pick_score || 0) >= 45 || Number(row.score || 0) >= 45) {
-    return {
-      action: "관심목록",
-      reason: "스캔 상대점수 상위이나 핵심 셋업은 완전하지 않습니다.",
-    };
+    return { action: "관심목록", reason: "상대적으로 괜찮아 보여 리스트에 넣어둡니다. 바로 사라는 뜻은 아니에요." };
   }
-  return { action: "회피", reason: "핵심 셋업 조건이 부족합니다." };
+  return { action: "회피", reason: "지금은 사기에 조건이 부족해요." };
 }

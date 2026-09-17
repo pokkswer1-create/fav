@@ -22,6 +22,7 @@ from analyzer.screener import (
     score_money_in_price_flat,
     screen_candidates,
 )
+from analyzer.signals import backtest_setup_expectancy, beginner_explain, detect_breakout
 from analyzer.themes import list_themes, stocks_for_theme
 
 
@@ -162,6 +163,17 @@ def build_stock_snapshot(
     if quote and quote.get("price"):
         latest = float(quote["price"])
     prob = estimate_upside_probability(_forward_returns(ohlcv), target_pct=5.0)
+    breakout = detect_breakout(ohlcv, lookback=lookback_days)
+    risk = risk_plan(latest or 1.0, float(score["score"]))
+    expectancy = backtest_setup_expectancy(
+        ohlcv,
+        flow,
+        lookback=lookback_days,
+        stop_pct=float(risk["stop_pct"]),
+        take_pct=float(risk["take1_pct"]),
+        max_days=int(risk["time_stop_days"]),
+        min_samples=1,
+    )
     row = {
         "ticker": ticker,
         "name": name,
@@ -175,7 +187,10 @@ def build_stock_snapshot(
         "analysis_3m": three,
         "analysis_6m": six,
         "probability": prob,
-        "risk": risk_plan(latest or 1.0, float(score["score"])),
+        "risk": risk,
+        "is_breakout": bool(breakout.get("is_breakout")),
+        "breakout": breakout,
+        "expectancy": expectancy,
         "is_theme_leader": False,
         "data_source": source,
     }
@@ -184,6 +199,11 @@ def build_stock_snapshot(
     comment = action_comment(row, regime)
     row["action"] = comment["action"]
     row["reason"] = comment["reason"]
+    explain = beginner_explain(row, regime)
+    row["beginner_summary"] = explain["summary"]
+    row["beginner_backtest"] = explain["backtest"]
+    row["beginner_guide"] = explain["guide"]
+    row["beginner_full"] = explain["full"]
     return row
 
 

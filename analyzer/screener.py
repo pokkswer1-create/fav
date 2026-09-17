@@ -255,21 +255,23 @@ def pick_why(row: dict[str, Any]) -> str:
     smart_eok = float(row.get("smart_money_net", 0)) / 1e8
     price_chg = float(row.get("price_change_pct", 0))
     if smart_eok > 0:
-        bits.append(f"스마트머니 +{smart_eok:.1f}억")
+        bits.append(f"큰손 유입 +{smart_eok:.1f}억")
     if row.get("is_flat_setup"):
-        bits.append("수급↑·가격정체 셋업")
+        bits.append("돈은 들어오는데 가격은 아직 조용")
     elif price_chg <= 8:
-        bits.append(f"기간수익률 {price_chg:+.1f}%로 아직 덜 상승")
+        bits.append(f"가격 변화 {price_chg:+.1f}%로 아직 덜 오름")
     if row.get("is_theme_leader"):
-        bits.append(f"{row.get('theme', '')} 테마 대장권")
+        bits.append(f"{row.get('theme', '')} 테마에서 돈이 더 몰림")
     consec = int(row.get("consecutive_smart_days", 0))
     if consec >= 2:
-        bits.append(f"연속수급 {consec}일")
-    prob = row.get("probability") or {}
-    if float(prob.get("prob_target_pct", 0) or 0) >= 40:
-        bits.append(f"+5%확률 {prob.get('prob_target_pct')}%")
+        bits.append(f"{consec}일 연속 큰손 매수")
+    if row.get("is_breakout"):
+        bits.append("최근 고점 돌파 확인")
+    exp = row.get("expectancy") or {}
+    if int(exp.get("sample_size", 0) or 0) >= 5:
+        bits.append(f"과거 유사셋업 기대수익 {float(exp.get('expectancy_pct', 0)):+.1f}%")
     if not bits:
-        return "상대 점수 상위이나 핵심 셋업은 약합니다."
+        return "상대적으로 나아 보이지만, 핵심 조건은 약해요."
     return " · ".join(bits)
 
 

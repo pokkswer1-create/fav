@@ -101,10 +101,25 @@ def test_probability_and_rules():
             "is_theme_leader": True,
             "score": 70,
             "smart_money_net": 1e9,
+            "is_breakout": True,
+            "expectancy": {"sample_size": 10, "expectancy_pct": 1.0},
         },
         "중립",
     )
     assert comment["action"] == "매수관심"
+    waiting = action_comment(
+        {
+            "liquidity_ok": True,
+            "price_change_pct": 2,
+            "is_flat_setup": True,
+            "is_theme_leader": True,
+            "score": 70,
+            "smart_money_net": 1e9,
+            "is_breakout": False,
+        },
+        "중립",
+    )
+    assert waiting["action"] == "관망"
     defense = action_comment(
         {
             "liquidity_ok": True,
@@ -113,6 +128,7 @@ def test_probability_and_rules():
             "is_theme_leader": True,
             "score": 70,
             "smart_money_net": 1e9,
+            "is_breakout": True,
         },
         "방어",
     )
@@ -162,5 +178,5 @@ def test_pick_stocks_always_ranks_top_n():
     assert len(picks) == 2
     assert picks[0]["pick_rank"] == 1
     assert picks[0]["ticker"] == "1"
-    assert "스마트머니" in picks[0]["pick_why"]
+    assert "큰손" in picks[0]["pick_why"] or "유입" in picks[0]["pick_why"]
     assert picks[0]["pick_score"] >= picks[1]["pick_score"]
