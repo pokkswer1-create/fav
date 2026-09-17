@@ -12,17 +12,22 @@
 - 손절/익절/시간손절·비중 가이드
 - 매수관심/관망/관심목록/회피 코멘트
 
-## 공개 웹 (Vercel)
+## 공개 웹 (영구)
 
-브라우저용 배포본은 `web/` 입니다.
+### A. Vercel (이미 배포됨)
+- URL: https://theme-flow-analyzer-pokkswer1-4079s-projects.vercel.app
+- 보호 설정: https://vercel.com/pokkswer1-4079s-projects/theme-flow-analyzer/settings/deployment-protection
+- **Vercel Authentication 을 Off** 하면 로그인 없이 영구 공개됩니다.
 
-- 프로덕션: https://theme-flow-analyzer-pokkswer1-4079s-projects.vercel.app
-- Vercel 팀 기본 **Deployment Protection(SSO)** 이 켜져 있으면 로그인 화면이 뜹니다.  
-  프로젝트 Settings → Deployment Protection → Vercel Authentication 을 끄면 누구나 볼 수 있습니다.
+### B. Render (원클릭, 무료·공개)
+1. PR을 `main`에 머지하거나 이 브랜치를 Render에 연결
+2. [Render에 배포](https://render.com/deploy?repo=https://github.com/pokkswer1-create/fav)
+3. `render.yaml` 기준 Streamlit 웹 서비스가 생성됩니다.
 
-```bash
-cd web && npx vercel --prod
-```
+### C. Streamlit Community Cloud
+1. https://share.streamlit.io 로그인
+2. GitHub `pokkswer1-create/fav` 연결
+3. Branch: `cursor/stock-analyzer-plan-4be7` (또는 `main`), Main file: `app.py`
 
 ## 로컬 실행 (Streamlit)
 

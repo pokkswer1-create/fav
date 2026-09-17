@@ -1,10 +1,13 @@
 services:
   - type: web
     name: theme-flow-analyzer
-    runtime: docker
+    runtime: python
     plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: PYTHONPATH=. streamlit run app.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true --browser.gatherUsageStats=false
     healthCheckPath: /
     envVars:
       - key: PYTHONPATH
-        value: /app
-    dockerCommand: streamlit run app.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true --browser.gatherUsageStats=false
+        value: .
+      - key: STREAMLIT_BROWSER_GATHER_USAGE_STATS
+        value: "false"
