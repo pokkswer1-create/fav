@@ -324,7 +324,8 @@ def estimate_upside_probability(
 
 
 def market_regime(kospi_change_pct: float, market_smart_money: float) -> str:
-    if kospi_change_pct <= -2.0 or market_smart_money < 0:
+    # 소폭 음봉만으로 방어 처리하지 않음 (예전엔 하락=smart_proxy -1 → 전부 방어)
+    if kospi_change_pct <= -1.5:
         return "방어"
     if kospi_change_pct >= 1.0 and market_smart_money > 0:
         return "공격"

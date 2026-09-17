@@ -132,10 +132,10 @@
 
     <div class="help">
       <strong>읽는 법</strong>
-      1) 액션만 먼저 보기 (매수관심/관망/관심목록/회피)
-      2) ‘왜?’는 쉬운 말 설명
-      3) 과거 성적은 참고용(미래 보장 X)
-      4) 매수관심은 셋업+고점 돌파가 겹칠 때만
+      매수관심=조건+돌파 /
+      분할관심=상위+돌파근접(소액 분할) /
+      돌파대기=조건 좋음→고점 돌파 순간 노리기 /
+      관심목록·회피=우선순위 낮음
     </div>
 
     <div class="row">
@@ -188,8 +188,8 @@
     const fmt = (n) => Number(n || 0).toLocaleString("ko-KR");
     const eok = (n) => (Number(n || 0) / 1e8).toFixed(1);
     const actionClass = (a) => {
-      if (a === "매수관심") return "";
-      if (a === "관망" || a === "관망축소" || a === "관심목록") return "warn";
+      if (a === "매수관심" || a === "분할관심") return "";
+      if (a === "소액관심" || a === "돌파대기" || a === "관망" || a === "관심목록") return "warn";
       return "bad";
     };
 

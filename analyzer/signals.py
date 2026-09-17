@@ -12,14 +12,17 @@ def detect_breakout(
     ohlcv: pd.DataFrame,
     lookback: int = 20,
     volume_mult: float = 1.2,
+    near_pct: float = 2.0,
 ) -> dict[str, Any]:
-    """최근 고점 돌파 + 거래량 확인 여부."""
+    """최근 고점 돌파 / 근접 돌파 + 거래량 확인."""
     empty = {
         "is_breakout": False,
+        "is_near_breakout": False,
         "breakout_level": 0.0,
         "volume_ok": False,
         "close": 0.0,
         "lookback_high": 0.0,
+        "distance_pct": 0.0,
     }
     if ohlcv is None or ohlcv.empty or "종가" not in ohlcv.columns or len(ohlcv) < lookback + 1:
         return empty
@@ -35,13 +38,17 @@ def detect_breakout(
         avg_vol = float(prior["거래량"].mean()) or 0.0
         last_vol = float(last["거래량"])
         vol_ok = avg_vol <= 0 or last_vol >= avg_vol * volume_mult
+    distance_pct = ((lookback_high / close) - 1.0) * 100.0 if close else 0.0
     is_breakout = close > lookback_high and vol_ok
+    is_near = (not is_breakout) and lookback_high > 0 and distance_pct <= near_pct
     return {
         "is_breakout": bool(is_breakout),
+        "is_near_breakout": bool(is_near),
         "breakout_level": round(lookback_high, 2),
         "volume_ok": bool(vol_ok),
         "close": round(close, 2),
         "lookback_high": round(lookback_high, 2),
+        "distance_pct": round(float(distance_pct), 2),
     }
 
 
@@ -178,11 +185,13 @@ def beginner_explain(row: dict[str, Any], regime: str = "중립") -> dict[str, s
         theme_line = f"{theme} 테마 종목이에요. 대장보다는 후순위일 수 있어요."
 
     if breakout:
-        trigger_line = "최근 고점을 거래량과 함께 뚫어서, ‘관심’에서 ‘매수 후보’로 올릴 신호가 나왔어요."
-    elif row.get("is_flat_setup"):
-        trigger_line = "돈은 들어오는데 가격이 아직 안 오른 ‘대기’ 구간이에요. 돌파가 나오면 더 확실해져요."
+        trigger_line = "최근 고점을 거래량과 함께 뚫었어요. ‘관심 매수’로 볼 신호가 나왔어요."
+    elif row.get("is_near_breakout"):
+        trigger_line = "고점까지 거의 다 왔어요. 돌파+거래량이 나오면 분할 매수를 검토할 구간이에요."
+    elif row.get("is_flat_setup") or float(row.get("smart_money_net", 0) or 0) > 0:
+        trigger_line = "돈은 들어오는데 가격이 아직 대기 중이에요. ‘돌파대기’로 고점 돌파를 노리면 됩니다."
     else:
-        trigger_line = "지금은 조건이 완벽하진 않아서, 지켜보는 편이 안전해요."
+        trigger_line = "지금은 조건이 약해서, 다른 상위 추천을 먼저 보는 게 좋아요."
 
     if samples >= 5:
         backtest_line = (
@@ -201,10 +210,14 @@ def beginner_explain(row: dict[str, Any], regime: str = "중립") -> dict[str, s
     }.get(regime, "시장 상태를 같이 보고 결정하세요.")
 
     action_guide = {
-        "매수관심": f"초보 가이드: {name}은(는) ‘관심 매수 후보’예요. 한 번에 몰빵하지 말고, 정해둔 손절가를 지키세요.",
+        "추격주의": f"초보 가이드: {name}은(는) 이미 올랐어요. 지금 따라 사지 말고, 조정을 기다리세요.",
+        "매수관심": f"초보 가이드: {name}은(는) 관심 매수 후보예요. 몰빵 금지, 손절가부터 정하세요.",
+        "분할관심": f"초보 가이드: {name}은(는) 나눠 사기만 검토하세요. 1차로 소액 → 돌파 확인 후 추가.",
+        "소액관심": f"초보 가이드: 시장이 약해요. {name}은(는) 사더라도 아주 소액 + 손절 필수예요.",
+        "돌파대기": f"초보 가이드: {name}은(는) 지금은 사지 말고, 고점 돌파+거래량 나오는 순간을 노리세요.",
         "관망": f"초보 가이드: {name}은(는) 관심만 두고, 돌파·추가 수급을 확인한 뒤 생각하세요.",
         "관망축소": f"초보 가이드: 조건은 괜찮은데 시장이 약해요. 매수보다 관망·소액만 고려하세요.",
-        "관심목록": f"초보 가이드: {name}을(를) 리스트에만 넣고, 매일 수급·돌파만 체크하세요.",
+        "관심목록": f"초보 가이드: {name}을(를) 리스트에 넣고, 상위 추천(돌파대기/분할관심)을 우선 보세요.",
         "회피": f"초보 가이드: 지금은 {name}을(를) 사지 않는 편이 낫습니다.",
     }.get(action, f"초보 가이드: {name}은(는) 신중히 보세요.")
 

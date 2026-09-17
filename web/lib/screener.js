@@ -147,7 +147,7 @@ export function pickStocks(rows, topN = 5) {
 }
 
 export function marketRegime(kospiChangePct, marketSmartMoney) {
-  if (kospiChangePct <= -2 || marketSmartMoney < 0) return "방어";
+  if (kospiChangePct <= -1.5) return "방어";
   if (kospiChangePct >= 1 && marketSmartMoney > 0) return "공격";
   return "중립";
 }
@@ -159,34 +159,44 @@ export function actionComment(row, regime) {
   if (Number(row.price_change_pct || 0) > 15) {
     return { action: "회피", reason: "이미 많이 올라 지금 따라 사면 고점에 잡을 위험이 커요." };
   }
-  const setupReady = row.is_flat_setup && row.is_theme_leader && Number(row.score || 0) >= 55;
-  const soft = Number(row.smart_money_net || 0) > 0 && Number(row.price_change_pct || 100) <= 8;
+  const score = Number(row.score || 0);
+  const pickScore = Number(row.pick_score || score);
+  const smart = Number(row.smart_money_net || 0);
+  const priceChg = Number(row.price_change_pct || 100);
+  const consec = Number(row.consecutive_smart_days || 0);
+  const leader = !!row.is_theme_leader;
+  const flat = !!row.is_flat_setup;
   const breakout = !!row.is_breakout;
-  const exp = row.expectancy || {};
-  const expectancyOk = Number(exp.expectancy_pct || 0) >= 0 && Number(exp.sample_size || 0) >= 5;
+  const near = !!row.is_near_breakout;
+  const setupReady = flat && leader && score >= 50;
+  const moneyOk = smart > 0 && priceChg <= 12;
+  const scaleInReady = leader && moneyOk && pickScore >= 55 && (near || consec >= 2 || score >= 45);
+  const alreadyUp = priceChg > 12 && priceChg <= 15 && smart > 0 && pickScore >= 50;
+
+  if (alreadyUp && !breakout) {
+    return { action: "추격주의", reason: "큰손은 들어왔지만 이미 꽤 올랐어요. 따라잡기보다 눌림이나 재돌파를 보는 게 낫습니다." };
+  }
 
   if (regime === "방어") {
-    if (setupReady && breakout) {
-      return { action: "관망축소", reason: "돌파까지 나왔지만 시장이 약해요. 사더라도 아주 소액만, 아니면 관망하세요." };
+    if ((setupReady || scaleInReady) && (breakout || near)) {
+      return { action: "소액관심", reason: "종목 조건은 상위권이에요. 다만 시장이 약하니 사더라도 소액·손절 필수예요." };
     }
-    if (setupReady || soft || Number(row.pick_score || row.score || 0) >= 40) {
-      return { action: "관심목록", reason: "종목은 괜찮아 보여도 시장이 약해서, 지금은 리스트에만 두고 지켜보세요." };
+    if (setupReady || scaleInReady || pickScore >= 50) {
+      return { action: "돌파대기", reason: "추천 상위권이에요. 시장이 약하니 지금은 사지 말고, 고점 돌파+거래량 나오면 소액만 검토하세요." };
     }
-    return { action: "회피", reason: "시장도 약하고 종목 조건도 약해서 지금은 사지 않는 게 좋아요." };
+    return { action: "관심목록", reason: "리스트에만 두고, 시장이 회복되는지 먼저 보세요." };
   }
   if (setupReady && breakout) {
-    if (expectancyOk || Number(exp.sample_size || 0) < 5) {
-      return { action: "매수관심", reason: "큰손 유입 + 가격 대기 + 테마 대장 + 고점 돌파가 겹쳤어요. 손절을 꼭 지키세요." };
-    }
+    return { action: "매수관심", reason: "큰손 유입 + 가격 대기 + 테마 대장 + 고점 돌파가 겹쳤어요. 손절을 지키며 관심 매수 후보예요." };
   }
-  if (setupReady && !breakout) {
-    return { action: "관망", reason: "조건은 좋은데 아직 고점을 뚫지 못했어요. 돌파 나오면 매수 후보로 올릴 수 있어요." };
+  if (scaleInReady && (breakout || near)) {
+    return { action: "분할관심", reason: "상위 추천이고 돌파가 나왔거나 바로 앞이에요. 한 번에 몰빵 말고 나눠 사는 방식만 검토하세요." };
   }
-  if (soft) {
-    return { action: "관망", reason: "돈은 들어오는데 확신이 덜해요. 며칠 더 수급·돌파를 확인하세요." };
+  if (setupReady || scaleInReady) {
+    return { action: "돌파대기", reason: "돈은 들어오고 추천 상위예요. 최근 고점을 뚫는 순간을 노리면 됩니다." };
   }
-  if (Number(row.pick_score || 0) >= 45 || Number(row.score || 0) >= 45) {
-    return { action: "관심목록", reason: "상대적으로 괜찮아 보여 리스트에 넣어둡니다. 바로 사라는 뜻은 아니에요." };
+  if (moneyOk && pickScore >= 45) {
+    return { action: "관심목록", reason: "상대적으로 괜찮아 리스트에 넣어둡니다. 돌파·연속 수급을 확인한 뒤 결정하세요." };
   }
   return { action: "회피", reason: "지금은 사기에 조건이 부족해요." };
 }

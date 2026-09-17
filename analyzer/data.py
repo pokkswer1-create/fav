@@ -105,7 +105,13 @@ def fetch_market_regime(demo: bool = False) -> dict:
     try:
         idx = fetch_realtime_index("KOSPI")
         chg = float(idx.get("change_pct") or 0.0)
-        smart_proxy = 1.0 if chg >= 0 else -1.0
+        # 방향만 참고. 소폭 하락을 방어장으로 만들지는 않음.
+        if chg >= 0.3:
+            smart_proxy = 1.0
+        elif chg <= -0.3:
+            smart_proxy = -1.0
+        else:
+            smart_proxy = 0.0
         return {
             "kospi_change_pct": round(chg, 2),
             "kospi_price": float(idx.get("price") or 0.0),
@@ -189,6 +195,7 @@ def build_stock_snapshot(
         "probability": prob,
         "risk": risk,
         "is_breakout": bool(breakout.get("is_breakout")),
+        "is_near_breakout": bool(breakout.get("is_near_breakout")),
         "breakout": breakout,
         "expectancy": expectancy,
         "is_theme_leader": False,

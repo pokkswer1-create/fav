@@ -91,6 +91,8 @@ def test_probability_and_rules():
     assert prob["sample_size"] == 5
     assert prob["prob_target_pct"] == 60.0
     assert market_regime(-3, -1) == "방어"
+    assert market_regime(-0.04, -1) == "중립"
+    assert market_regime(0.2, 0) == "중립"
     plan = risk_plan(10000, 70)
     assert plan["stop_price"] < 10000
     comment = action_comment(
@@ -114,12 +116,31 @@ def test_probability_and_rules():
             "is_flat_setup": True,
             "is_theme_leader": True,
             "score": 70,
+            "pick_score": 90,
             "smart_money_net": 1e9,
+            "consecutive_smart_days": 3,
             "is_breakout": False,
+            "is_near_breakout": False,
         },
         "중립",
     )
-    assert waiting["action"] == "관망"
+    assert waiting["action"] == "돌파대기"
+    scale = action_comment(
+        {
+            "liquidity_ok": True,
+            "price_change_pct": 2,
+            "is_flat_setup": False,
+            "is_theme_leader": True,
+            "score": 48,
+            "pick_score": 90,
+            "smart_money_net": 1e9,
+            "consecutive_smart_days": 3,
+            "is_breakout": False,
+            "is_near_breakout": True,
+        },
+        "중립",
+    )
+    assert scale["action"] == "분할관심"
     defense = action_comment(
         {
             "liquidity_ok": True,
@@ -127,12 +148,14 @@ def test_probability_and_rules():
             "is_flat_setup": True,
             "is_theme_leader": True,
             "score": 70,
+            "pick_score": 90,
             "smart_money_net": 1e9,
             "is_breakout": True,
+            "is_near_breakout": False,
         },
         "방어",
     )
-    assert defense["action"] == "관망축소"
+    assert defense["action"] == "소액관심"
 
 
 def test_pick_stocks_always_ranks_top_n():

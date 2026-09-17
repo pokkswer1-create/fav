@@ -2,8 +2,8 @@ function tail(arr, n) {
   return arr.slice(-n);
 }
 
-export function detectBreakout(ohlcv, lookback = 20, volumeMult = 1.2) {
-  const empty = { is_breakout: false, breakout_level: 0, volume_ok: false };
+export function detectBreakout(ohlcv, lookback = 20, volumeMult = 1.2, nearPct = 2.0) {
+  const empty = { is_breakout: false, is_near_breakout: false, breakout_level: 0, volume_ok: false, distance_pct: 0 };
   if (!ohlcv || ohlcv.length < lookback + 1) return empty;
   const window = ohlcv.slice(-(lookback + 1));
   const prior = window.slice(0, -1);
@@ -12,10 +12,15 @@ export function detectBreakout(ohlcv, lookback = 20, volumeMult = 1.2) {
   const close = last.close;
   const avgVol = prior.reduce((s, r) => s + (r.volume || 0), 0) / prior.length;
   const volumeOk = !avgVol || (last.volume || 0) >= avgVol * volumeMult;
+  const distancePct = close ? ((lookbackHigh / close) - 1) * 100 : 0;
+  const isBreakout = close > lookbackHigh && volumeOk;
+  const isNear = !isBreakout && lookbackHigh > 0 && distancePct <= nearPct;
   return {
-    is_breakout: close > lookbackHigh && volumeOk,
+    is_breakout: isBreakout,
+    is_near_breakout: isNear,
     breakout_level: lookbackHigh,
     volume_ok: volumeOk,
+    distance_pct: Math.round(distancePct * 100) / 100,
   };
 }
 
@@ -96,11 +101,13 @@ export function beginnerExplain(row, regime = "중립") {
   const themeLine = row.is_theme_leader
     ? `${theme} 테마 안에서도 돈이 상대적으로 더 몰리는 편이에요.`
     : `${theme} 테마 종목이에요. 대장보다는 후순위일 수 있어요.`;
-  let triggerLine = "지금은 조건이 완벽하진 않아서, 지켜보는 편이 안전해요.";
+  let triggerLine = "지금은 조건이 약해서, 다른 상위 추천을 먼저 보는 게 좋아요.";
   if (row.is_breakout) {
-    triggerLine = "최근 고점을 거래량과 함께 뚫어서, ‘관심’에서 ‘매수 후보’로 올릴 신호가 나왔어요.";
-  } else if (row.is_flat_setup) {
-    triggerLine = "돈은 들어오는데 가격이 아직 안 오른 ‘대기’ 구간이에요. 돌파가 나오면 더 확실해져요.";
+    triggerLine = "최근 고점을 거래량과 함께 뚫었어요. ‘관심 매수’로 볼 신호가 나왔어요.";
+  } else if (row.is_near_breakout) {
+    triggerLine = "고점까지 거의 다 왔어요. 돌파+거래량이 나오면 분할 매수를 검토할 구간이에요.";
+  } else if (row.is_flat_setup || Number(row.smart_money_net || 0) > 0) {
+    triggerLine = "돈은 들어오는데 가격이 아직 대기 중이에요. ‘돌파대기’로 고점 돌파를 노리면 됩니다.";
   }
   const samples = Number(exp.sample_size || 0);
   const backtest =
@@ -113,10 +120,13 @@ export function beginnerExplain(row, regime = "중립") {
     중립: "시장은 보통이에요. 종목 조건만 잘 보면 됩니다.",
   }[regime] || "시장 상태를 같이 보고 결정하세요.";
   const guide = {
-    매수관심: `초보 가이드: ${name}은(는) ‘관심 매수 후보’예요. 한 번에 몰빵하지 말고, 정해둔 손절가를 지키세요.`,
+    추격주의: `초보 가이드: ${name}은(는) 이미 올랐어요. 지금 따라 사지 말고, 조정을 기다리세요.`,
+    매수관심: `초보 가이드: ${name}은(는) 관심 매수 후보예요. 몰빵 금지, 손절가부터 정하세요.`,
+    분할관심: `초보 가이드: ${name}은(는) 나눠 사기만 검토하세요. 1차로 소액 → 돌파 확인 후 추가.`,
+    소액관심: `초보 가이드: 시장이 약해요. ${name}은(는) 사더라도 아주 소액 + 손절 필수예요.`,
+    돌파대기: `초보 가이드: ${name}은(는) 지금은 사지 말고, 고점 돌파+거래량 나오는 순간을 노리세요.`,
     관망: `초보 가이드: ${name}은(는) 관심만 두고, 돌파·추가 수급을 확인한 뒤 생각하세요.`,
-    관망축소: `초보 가이드: 조건은 괜찮은데 시장이 약해요. 매수보다 관망·소액만 고려하세요.`,
-    관심목록: `초보 가이드: ${name}을(를) 리스트에만 넣고, 매일 수급·돌파만 체크하세요.`,
+    관심목록: `초보 가이드: ${name}을(를) 리스트에 넣고, 상위 추천(돌파대기/분할관심)을 우선 보세요.`,
     회피: `초보 가이드: 지금은 ${name}을(를) 사지 않는 편이 낫습니다.`,
   }[action] || `초보 가이드: ${name}은(는) 신중히 보세요.`;
   const summary = [moneyLine, priceLine, themeLine, triggerLine].join(" ");

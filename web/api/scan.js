@@ -68,6 +68,7 @@ async function buildSnapshot(item, lookbackDays, quote) {
     latest_close: latest,
     realtime_change_pct: quote?.change_pct || 0,
     is_breakout: !!breakout.is_breakout,
+    is_near_breakout: !!breakout.is_near_breakout,
     breakout,
     expectancy,
     data_source: "naver_live",
