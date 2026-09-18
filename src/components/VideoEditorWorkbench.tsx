@@ -10,9 +10,20 @@ import {
   marksToClips,
   type PlayerMark,
 } from "@/lib/player-marks";
+import {
+  COURT_SLOTS,
+  emptyLineup,
+  filledAssignments,
+  mergeLineupIntoMarks,
+  rotateLineup,
+  setLineupSlot,
+  updateLineupCoords,
+  type CourtSlot,
+  type LineupAssignment,
+} from "@/lib/court-lineup";
 import { DEFAULT_MATCH_VIDEO, listAvailableMatchVideos, MATCH_VIDEOS, MAX_MATCH_DURATION_LABEL, resolvePreferredMatchVideo, type MatchVideoOption } from "@/lib/match-videos";
-import { consumeEditorBridge, loadPlayerTracks, playerTrackSourceKey, savePlayerTracks } from "@/lib/storage";
-import { listStaticTrackPins, resolveAllFollowPins, summarizePlayerTracks, TRACK_CLICKS_TARGET } from "@/lib/track-overlay";
+import { consumeEditorBridge, loadPlayerTrackState, playerTrackSourceKey, savePlayerTrackState } from "@/lib/storage";
+import { listStaticTrackPins, resolveAllFollowPins, summarizePlayerTracks } from "@/lib/track-overlay";
 import type { ClipKind, PlayerStats, VideoClipMarker } from "@/lib/types";
 import { WingLogo } from "./SiteHeader";
 import { HowToPanel } from "./UiGuide";
@@ -61,6 +72,8 @@ export function VideoEditorWorkbench() {
   const [file, setFile] = useState<File | null>(null);
   const [clips, setClips] = useState<VideoClipMarker[]>(() => cloneDemoClips());
   const [marks, setMarks] = useState<PlayerMark[]>([]);
+  const [lineup, setLineup] = useState<Array<LineupAssignment | null>>(() => emptyLineup());
+  const [activeSlot, setActiveSlot] = useState<CourtSlot>(4);
   const [markMode, setMarkMode] = useState(false);
   const [playheadSec, setPlayheadSec] = useState(0);
   const [showTrackOverlay, setShowTrackOverlay] = useState(true);
@@ -138,15 +151,17 @@ export function VideoEditorWorkbench() {
 
   const skipTrackSaveRef = useRef(false);
 
-  // Restore per-player tracks when the match source changes (before save effect).
+  // Restore lineup + tracks when the match source changes (before save effect).
   useEffect(() => {
     if (!trackSourceKey) return;
     skipTrackSaveRef.current = true;
-    const saved = loadPlayerTracks(trackSourceKey);
-    setMarks(saved as PlayerMark[]);
-    if (saved.length) {
+    const saved = loadPlayerTrackState(trackSourceKey);
+    setMarks(saved.marks as PlayerMark[]);
+    setLineup(saved.lineup as Array<LineupAssignment | null>);
+    const filled = saved.lineup.filter(Boolean).length;
+    if (saved.marks.length || filled) {
       setStatus(
-        `저장된 선수 추적 ${summarizePlayerTracks(saved as PlayerMark[]).length}명 · 위치핀 ${saved.filter((m) => typeof m.xNorm === "number").length}개 로드`,
+        `저장 로드 · 포지션 ${filled}/6 · 추적핀 ${saved.marks.filter((m) => typeof m.xNorm === "number").length}개`,
       );
     }
   }, [trackSourceKey]);
@@ -157,8 +172,8 @@ export function VideoEditorWorkbench() {
       skipTrackSaveRef.current = false;
       return;
     }
-    savePlayerTracks(trackSourceKey, marks);
-  }, [marks, trackSourceKey]);
+    savePlayerTrackState(trackSourceKey, { marks, lineup });
+  }, [marks, lineup, trackSourceKey]);
 
   const validClips = useMemo(
     () => alignClipsToDuration(clips, mediaDuration),
@@ -221,6 +236,43 @@ export function VideoEditorWorkbench() {
     setClips((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
   }
 
+  function applyLineupToTracks(nextLineup = lineup) {
+    const t = videoRef.current?.currentTime;
+    const timeSec = typeof t === "number" && Number.isFinite(t) ? t : playheadSec;
+    setMarks((prev) => mergeLineupIntoMarks(prev, nextLineup, timeSec));
+    setPlayheadSec(timeSec);
+    const n = filledAssignments(nextLineup).length;
+    setError(null);
+    setStatus(
+      n > 0
+        ? `포지션 ${n}/6 적용 · 재생 시 선수별 핀 추적 (필요하면 보정 클릭)`
+        : "포지션이 비어 있습니다. 코트 슬롯에 선수를 배치하세요.",
+    );
+  }
+
+  function assignPlayerToSlot(slot: CourtSlot) {
+    const next = setLineupSlot(
+      lineup,
+      {
+        slot,
+        playerNumber: activeMarkTarget.number,
+        playerName: activeMarkTarget.name,
+        playerId: activeMarkTarget.id,
+      },
+      slot,
+    );
+    setLineup(next);
+    setActiveSlot(slot);
+    setSelectedNumber(activeMarkTarget.number);
+    applyLineupToTracks(next);
+  }
+
+  function clearSlot(slot: CourtSlot) {
+    const next = setLineupSlot(lineup, null, slot);
+    setLineup(next);
+    applyLineupToTracks(next);
+  }
+
   function addMarkAtTime(opts?: { xNorm?: number; yNorm?: number; timeSec?: number }) {
     const video = videoRef.current;
     const timeSec =
@@ -237,18 +289,23 @@ export function VideoEditorWorkbench() {
       xNorm: opts?.xNorm,
       yNorm: opts?.yNorm,
     });
-    setMarks((prev) => [...prev, mark].sort((a, b) => a.timeSec - b.timeSec));
+    let nextLineup = lineup;
+    if (typeof opts?.xNorm === "number" && typeof opts?.yNorm === "number") {
+      nextLineup = updateLineupCoords(lineup, activeMarkTarget.number, opts.xNorm, opts.yNorm);
+      setLineup(nextLineup);
+    }
+    setMarks((prev) => {
+      const withNew = [...prev, mark].sort((a, b) => a.timeSec - b.timeSec);
+      return typeof opts?.xNorm === "number"
+        ? mergeLineupIntoMarks(withNew, nextLineup, timeSec)
+        : withNew;
+    });
     setPlayheadSec(mark.timeSec);
     setError(null);
-    const nextCount =
-      marks.filter((m) => m.playerNumber === mark.playerNumber && typeof m.xNorm === "number").length +
-      (typeof mark.xNorm === "number" ? 1 : 0);
     setStatus(
       typeof mark.xNorm === "number"
-        ? `#${mark.playerNumber} ${mark.playerName} 위치핀 ${nextCount}개 @ ${mark.timeSec.toFixed(1)}s · 선수별 경로 저장${
-            nextCount >= TRACK_CLICKS_TARGET ? " · OK" : ` · ${TRACK_CLICKS_TARGET}~7권장`
-          }`
-        : `#${mark.playerNumber} ${mark.playerName} 마크 @ ${mark.timeSec.toFixed(1)}s · 위치 추적은 영상 클릭 필요`,
+        ? `#${mark.playerNumber} ${mark.playerName} 보정핀 @ ${mark.timeSec.toFixed(1)}s · 포지션 경로에 반영`
+        : `#${mark.playerNumber} ${mark.playerName} 마크 @ ${mark.timeSec.toFixed(1)}s`,
     );
   }
 
@@ -262,7 +319,7 @@ export function VideoEditorWorkbench() {
 
   function buildClipsFromMarks(onlySelected = false) {
     if (!marks.length) {
-      setError("찍은 선수 마크가 없습니다. 번호 찍기 모드에서 영상을 클릭하거나 ‘지금 시각에 찍기’를 누르세요.");
+      setError("포지션을 배치하거나 보정 클릭으로 마크를 만든 뒤 컷을 생성하세요.");
       return;
     }
     const next = marksToClips(marks, mediaDuration, {
@@ -280,7 +337,7 @@ export function VideoEditorWorkbench() {
     setStatus(
       onlySelected
         ? `#${activeMarkTarget.number} 마크 ${next.length}클립 생성 — 하이라이트 생성 가능`
-        : `찍은 선수 ${markSummary.length}명 → ${next.length}클립 생성 — 하이라이트 생성 가능`,
+        : `추적 선수 ${trackSummary.length}명 → ${next.length}클립 생성 — 하이라이트 생성 가능`,
     );
   }
 
@@ -452,9 +509,8 @@ export function VideoEditorWorkbench() {
         <p className="eyebrow">HIGHLIGHT DESK</p>
         <h1>경기 영상 하이라이트 편집</h1>
         <p className="lede">
-          등번호가 안 보이면 OCR 대신 <strong>선수마다 위치를 {TRACK_CLICKS_TARGET}~7번</strong> 찍어
-          경로를 저장하세요. 재생 중 선수별 핀이 각각 따라다니며, 같은 경기 영상에서는 자동으로
-          불러옵니다.
+          <strong>포지션 설정</strong>으로 코트 1~6에 선수를 배치하면 추적 핀이 생깁니다. 위치가
+          어긋나면 <strong>보정</strong>으로 영상을 클릭해 경로만 다듬으면 됩니다.
         </p>
       </section>
 
@@ -462,17 +518,17 @@ export function VideoEditorWorkbench() {
         title="긴 경기 영상"
         steps={[
           `① 전체 세트(또는 업로드, ${MAX_MATCH_DURATION_LABEL})를 고릅니다.`,
-          "② 스카우트 스탬프·번호 찍기로 컷을 만듭니다 (자동 감지/OCR은 짧은 영상용).",
+          "② 스카우트 스탬프·포지션 배치로 컷을 만듭니다 (자동 감지/OCR은 짧은 영상용).",
           "③ 하이라이트 생성 시 해당 구간만 서버로 보냅니다.",
         ]}
       />
 
       <HowToPanel
-        title="번호가 안 보일 때 · 선수별 추적"
+        title="포지션 설정 + 보정"
         steps={[
-          `① 선수 선택 → ‘번호 찍기’ 켜기 → 그 선수를 ${TRACK_CLICKS_TARGET}~7번 위치 클릭`,
-          "② 다른 선수로 바꿔 같은 방식으로 찍기 — 선수마다 경로가 따로 저장됩니다",
-          "③ 재생하면 선수별 색 핀이 각자 따라다니고, 경기 영상을 다시 열어도 유지됩니다",
+          "① 선수 선택 후 코트 슬롯(P1~P6)에 배치 — 선수별 추적 시작점 저장",
+          "② 로테가 바뀌면 ‘로테 +1’ 또는 슬롯만 다시 맞추기",
+          "③ 핀이 어긋나면 ‘보정 ON’ 후 영상 클릭으로 경로 보정",
         ]}
       />
 
@@ -544,10 +600,8 @@ export function VideoEditorWorkbench() {
             </div>
             {markMode ? (
               <p className="mark-mode-hint">
-                찍기 ON · 클릭 시 #{activeMarkTarget.number} {activeMarkTarget.name}
-                {staticPins.length > 0
-                  ? ` · 추적 ${followPins.length}명 표시`
-                  : " · 선수 위치를 클릭하세요"}
+                보정 ON · 클릭 시 #{activeMarkTarget.number} {activeMarkTarget.name}
+                {followPins.length > 0 ? ` · 추적 ${followPins.length}명` : ""}
               </p>
             ) : null}
           </div>
@@ -610,6 +664,82 @@ export function VideoEditorWorkbench() {
         </div>
 
         <div className="clip-pane">
+          <div className="court-lineup-panel">
+            <div className="court-lineup-head">
+              <strong>포지션 설정</strong>
+              <span className="hint">
+                선택 선수 #{activeMarkTarget.number} {activeMarkTarget.name} · 슬롯 클릭으로 배치
+              </span>
+            </div>
+            <div className="court-lineup-grid" role="group" aria-label="코트 포지션 P1–P6">
+              {COURT_SLOTS.map((slot) => {
+                const assigned = lineup[slot.slot - 1];
+                const isActive = activeSlot === slot.slot;
+                return (
+                  <button
+                    key={slot.slot}
+                    type="button"
+                    className={`court-slot ${isActive ? "is-active" : ""} ${assigned ? "is-filled" : ""}`}
+                    onClick={() => assignPlayerToSlot(slot.slot)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      clearSlot(slot.slot);
+                    }}
+                    title={
+                      assigned
+                        ? `${slot.label} · #${assigned.playerNumber} ${assigned.playerName} (우클릭: 비우기)`
+                        : `${slot.label}에 #${activeMarkTarget.number} 배치`
+                    }
+                  >
+                    <span className="court-slot-label">{slot.shortLabel}</span>
+                    {assigned ? (
+                      <span className="court-slot-player">
+                        #{assigned.playerNumber}
+                        <small>{assigned.playerName}</small>
+                      </span>
+                    ) : (
+                      <span className="court-slot-empty">비움</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="court-lineup-actions">
+              <button
+                type="button"
+                className="btn ghost"
+                disabled={locked}
+                onClick={() => {
+                  const next = rotateLineup(lineup);
+                  setLineup(next);
+                  applyLineupToTracks(next);
+                }}
+              >
+                로테 +1
+              </button>
+              <button
+                type="button"
+                className="btn primary"
+                disabled={locked || filledAssignments(lineup).length === 0}
+                onClick={() => applyLineupToTracks()}
+              >
+                포지션 적용
+              </button>
+              <button
+                type="button"
+                className="btn ghost danger"
+                disabled={locked || filledAssignments(lineup).length === 0}
+                onClick={() => {
+                  const next = emptyLineup();
+                  setLineup(next);
+                  applyLineupToTracks(next);
+                }}
+              >
+                포지션 초기화
+              </button>
+            </div>
+          </div>
+
           <div className="player-track-bar">
             <label>
               로스터 선수
@@ -619,7 +749,7 @@ export function VideoEditorWorkbench() {
                   setSelectedNumber(Number(e.target.value));
                   setCustomNumber("");
                 }}
-                aria-label="트래킹할 선수"
+                aria-label="배치할 선수"
               >
                 {ROSTER.map((p) => (
                   <option key={p.id} value={p.number}>
@@ -655,8 +785,9 @@ export function VideoEditorWorkbench() {
               className={`btn ghost ${markMode ? "is-active" : ""}`}
               disabled={locked}
               onClick={() => setMarkMode((v) => !v)}
+              title="영상 클릭으로 위치 보정"
             >
-              {markMode ? "번호 찍기 ON" : "번호 찍기"}
+              {markMode ? "보정 ON" : "위치 보정"}
             </button>
             <button
               type="button"
@@ -667,16 +798,13 @@ export function VideoEditorWorkbench() {
             >
               {showTrackOverlay ? "추적 핀 ON" : "추적 핀"}
             </button>
-            <button type="button" className="btn ghost" disabled={locked} onClick={() => addMarkAtTime()}>
-              지금 시각에 #{activeMarkTarget.number} 찍기
-            </button>
             <button
               type="button"
               className="btn primary"
               disabled={locked || marks.length === 0}
               onClick={() => buildClipsFromMarks(false)}
             >
-              찍은 선수 컷 만들기
+              추적 선수 컷 만들기
             </button>
             <button
               type="button"
@@ -697,25 +825,23 @@ export function VideoEditorWorkbench() {
             </button>
           </div>
 
-          {marks.length > 0 ? (
+          {marks.length > 0 || filledAssignments(lineup).length > 0 ? (
             <div className="mark-panel">
               <div className="mark-summary">
                 {trackSummary.map((row) => (
-                  <span
-                    key={row.playerNumber}
-                    className={row.ready ? "is-ready" : "is-building"}
-                    title={
-                      row.ready
-                        ? `추적 경로 저장됨 (${row.pinCount}핀)`
-                        : `${TRACK_CLICKS_TARGET}~7번 클릭 권장 (현재 ${row.pinCount})`
-                    }
-                  >
+                  <span key={row.playerNumber} className={row.ready ? "is-ready" : "is-building"}>
                     #{row.playerNumber} {row.playerName} · {row.pinCount}핀
-                    {row.ready ? " · OK" : ` · ${TRACK_CLICKS_TARGET}권장`}
                   </span>
                 ))}
-                <button type="button" className="btn ghost danger" onClick={() => setMarks([])}>
-                  마크 전체 삭제
+                <button
+                  type="button"
+                  className="btn ghost danger"
+                  onClick={() => {
+                    setMarks([]);
+                    setLineup(emptyLineup());
+                  }}
+                >
+                  추적 전체 삭제
                 </button>
               </div>
               <ul className="mark-list">
@@ -723,7 +849,11 @@ export function VideoEditorWorkbench() {
                   <li key={mark.id}>
                     <button type="button" className="mark-jump" onClick={() => seekToMark(mark)}>
                       #{mark.playerNumber} {mark.playerName} @ {mark.timeSec.toFixed(1)}s
-                      {typeof mark.xNorm === "number" ? " · 위치핀" : ""}
+                      {mark.note?.startsWith("lineup:")
+                        ? ` · ${mark.note.replace("lineup:", "")}`
+                        : typeof mark.xNorm === "number"
+                          ? " · 보정"
+                          : ""}
                     </button>
                     <button
                       type="button"
@@ -738,8 +868,8 @@ export function VideoEditorWorkbench() {
             </div>
           ) : (
             <p className="hint mark-empty">
-              선수마다 위치를 {TRACK_CLICKS_TARGET}~7번 클릭하면 각각 추적 경로가 저장됩니다. 현재
-              대상: #{activeMarkTarget.number} {activeMarkTarget.name}
+              위 코트에서 포지션을 배치하세요. 현재 대상: #{activeMarkTarget.number}{" "}
+              {activeMarkTarget.name}
             </p>
           )}
 
@@ -754,6 +884,7 @@ export function VideoEditorWorkbench() {
                 viewingResultRef.current = false;
                 setClips(cloneDemoClips());
                 setMarks([]);
+                setLineup(emptyLineup());
                 setMarkMode(false);
                 setFile(null);
                 setMatchVideoId(DEFAULT_MATCH_VIDEO.id);

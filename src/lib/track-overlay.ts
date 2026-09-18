@@ -177,7 +177,7 @@ export function summarizePlayerTracks(marks: PlayerMark[]): PlayerTrackSummary[]
       playerNumber,
       playerName: list[0]?.playerName ?? "선수",
       pinCount: list.length,
-      ready: list.length >= TRACK_CLICKS_TARGET,
+      ready: list.length >= 1,
     }))
     .sort((a, b) => a.playerNumber - b.playerNumber);
 }

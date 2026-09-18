@@ -6,7 +6,6 @@ import {
   resolveFollowPin,
   summarizePlayerTracks,
   trackColorForPlayer,
-  TRACK_CLICKS_TARGET,
   type TrackPin,
 } from "./track-overlay";
 
@@ -81,14 +80,16 @@ describe("resolveAllFollowPins", () => {
 });
 
 describe("summarizePlayerTracks", () => {
-  it("counts positional pins per player and marks ready at target clicks", () => {
-    const marks = Array.from({ length: TRACK_CLICKS_TARGET }, (_, i) =>
-      pinMark(i + 1, 7, 0.1 * i, 0.2, "김하늘"),
-    ).concat([pinMark(1, 10, 0.5, 0.5, "박")]);
+  it("counts positional pins per player; ready with at least one pin", () => {
+    const marks = [
+      pinMark(1, 7, 0.2, 0.2, "김하늘"),
+      pinMark(2, 7, 0.3, 0.3, "김하늘"),
+      pinMark(1, 10, 0.5, 0.5, "박"),
+    ];
     const summary = summarizePlayerTracks(marks);
     expect(summary).toEqual([
-      { playerNumber: 7, playerName: "김하늘", pinCount: TRACK_CLICKS_TARGET, ready: true },
-      { playerNumber: 10, playerName: "박", pinCount: 1, ready: false },
+      { playerNumber: 7, playerName: "김하늘", pinCount: 2, ready: true },
+      { playerNumber: 10, playerName: "박", pinCount: 1, ready: true },
     ]);
   });
 });
