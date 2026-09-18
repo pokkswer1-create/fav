@@ -225,3 +225,56 @@ export async function restoreLibraryFromIdb(): Promise<boolean> {
   }
   return false;
 }
+
+const PLAYER_TRACKS_KEY = "fav.scout.player-tracks.v1";
+
+export interface StoredPlayerTracks {
+  /** Catalog match id, or `upload:<name>` for uploaded files. */
+  sourceKey: string;
+  marks: Array<{
+    id: string;
+    timeSec: number;
+    playerNumber: number;
+    playerName: string;
+    playerId?: string;
+    xNorm?: number;
+    yNorm?: number;
+    note?: string;
+  }>;
+  updatedAt: string;
+}
+
+function readPlayerTracksMap(): Record<string, StoredPlayerTracks> {
+  return readJson<Record<string, StoredPlayerTracks>>(PLAYER_TRACKS_KEY, {});
+}
+
+export function loadPlayerTracks(sourceKey: string): StoredPlayerTracks["marks"] {
+  const key = sourceKey.trim();
+  if (!key) return [];
+  return readPlayerTracksMap()[key]?.marks ?? [];
+}
+
+export function savePlayerTracks(sourceKey: string, marks: StoredPlayerTracks["marks"]): void {
+  const key = sourceKey.trim();
+  if (!key) return;
+  const map = readPlayerTracksMap();
+  if (!marks.length) {
+    delete map[key];
+  } else {
+    map[key] = {
+      sourceKey: key,
+      marks,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+  writeJson(PLAYER_TRACKS_KEY, map);
+}
+
+export function playerTrackSourceKey(opts: {
+  matchVideoId?: string | null;
+  fileName?: string | null;
+}): string {
+  if (opts.fileName?.trim()) return `upload:${opts.fileName.trim()}`;
+  return String(opts.matchVideoId ?? "").trim();
+}
+

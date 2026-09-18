@@ -1,4 +1,5 @@
 import type { PlayerMark } from "./player-marks";
+import { groupMarksByPlayer } from "./player-marks";
 
 export interface TrackPin {
   id: string;
@@ -10,7 +11,12 @@ export interface TrackPin {
   /** 0..1 visual strength. */
   opacity: number;
   mode: "snap" | "lerp" | "hold" | "static";
+  /** CSS color for multi-player distinction. */
+  color?: string;
 }
+
+/** Suggested clicks per player for a stable follow path. */
+export const TRACK_CLICKS_TARGET = 6;
 
 function hasPos(m: PlayerMark): m is PlayerMark & { xNorm: number; yNorm: number } {
   return typeof m.xNorm === "number" && typeof m.yNorm === "number";
@@ -23,13 +29,21 @@ function positionalMarks(marks: PlayerMark[], playerNumber?: number): Array<Play
     .sort((a, b) => a.timeSec - b.timeSec);
 }
 
+/** Stable accent per jersey so multiple follow pins stay readable. */
+export function trackColorForPlayer(playerNumber: number): string {
+  const n = Math.max(0, Math.min(99, Math.round(playerNumber)));
+  // Magenta family for FAV brand, spaced by jersey so 6–7 players differ.
+  const hue = (320 + n * 37) % 360;
+  return `hsl(${hue} 88% 58%)`;
+}
+
 function holdPin(
   m: PlayerMark & { xNorm: number; yNorm: number },
   t: number,
   mode: "snap" | "hold" = "hold",
 ): TrackPin {
   return {
-    id: `follow-${m.id}`,
+    id: `follow-${m.playerNumber}-${m.id}`,
     playerNumber: m.playerNumber,
     playerName: m.playerName,
     xNorm: m.xNorm,
@@ -37,20 +51,19 @@ function holdPin(
     timeSec: t,
     opacity: 1,
     mode,
+    color: trackColorForPlayer(m.playerNumber),
   };
 }
 
 /**
- * Follow pin for playback.
- * Once a positional mark exists, the pin stays from the first mark through
- * the end of the video (lerp between marks, then hold the last position).
+ * Follow pin for one player.
+ * From first positional mark through duration end: lerp between marks, then hold last.
  */
 export function resolveFollowPin(
   marks: PlayerMark[],
   timeSec: number,
   opts?: {
     playerNumber?: number;
-    /** Video duration; when set, pin holds through the end. */
     durationSec?: number;
   },
 ): TrackPin | null {
@@ -84,17 +97,13 @@ export function resolveFollowPin(
   const first = list[0];
   const last = list[list.length - 1];
 
-  // Before the first mark: no follow yet (user stamps, then we stick to the end).
   if (t < first.timeSec) return null;
-
-  // Past the end of the media: hide.
   if (t > duration) return null;
 
   if (list.length === 1) {
     return holdPin(first, t, "hold");
   }
 
-  // After last mark: hold last position until the end.
   if (t >= last.timeSec) {
     return holdPin(last, t, "hold");
   }
@@ -106,7 +115,7 @@ export function resolveFollowPin(
   const span = Math.max(0.001, b.timeSec - a.timeSec);
   const u = Math.max(0, Math.min(1, (t - a.timeSec) / span));
   return {
-    id: `follow-${a.id}-${b.id}`,
+    id: `follow-${a.playerNumber}-${a.id}-${b.id}`,
     playerNumber: a.playerNumber,
     playerName: a.playerName,
     xNorm: a.xNorm + (b.xNorm - a.xNorm) * u,
@@ -114,10 +123,31 @@ export function resolveFollowPin(
     timeSec: t,
     opacity: 1,
     mode: "lerp",
+    color: trackColorForPlayer(a.playerNumber),
   };
 }
 
-/** Static dots for every click pin (always visible while marks exist). */
+/**
+ * One follow pin per player that has positional marks — each path is independent.
+ */
+export function resolveAllFollowPins(
+  marks: PlayerMark[],
+  timeSec: number,
+  opts?: { durationSec?: number },
+): TrackPin[] {
+  const byPlayer = groupMarksByPlayer(marks.filter(hasPos));
+  const pins: TrackPin[] = [];
+  for (const playerNumber of [...byPlayer.keys()].sort((a, b) => a - b)) {
+    const pin = resolveFollowPin(marks, timeSec, {
+      playerNumber,
+      durationSec: opts?.durationSec,
+    });
+    if (pin) pins.push(pin);
+  }
+  return pins;
+}
+
+/** Static dots for every click pin, colored per player. */
 export function listStaticTrackPins(marks: PlayerMark[]): TrackPin[] {
   return positionalMarks(marks).map((m) => ({
     id: m.id,
@@ -128,5 +158,26 @@ export function listStaticTrackPins(marks: PlayerMark[]): TrackPin[] {
     timeSec: m.timeSec,
     opacity: 0.55,
     mode: "static" as const,
+    color: trackColorForPlayer(m.playerNumber),
   }));
+}
+
+export interface PlayerTrackSummary {
+  playerNumber: number;
+  playerName: string;
+  pinCount: number;
+  ready: boolean;
+}
+
+/** Per-player positional pin counts (for 6–7 click guidance). */
+export function summarizePlayerTracks(marks: PlayerMark[]): PlayerTrackSummary[] {
+  const byPlayer = groupMarksByPlayer(marks.filter(hasPos));
+  return [...byPlayer.entries()]
+    .map(([playerNumber, list]) => ({
+      playerNumber,
+      playerName: list[0]?.playerName ?? "선수",
+      pinCount: list.length,
+      ready: list.length >= TRACK_CLICKS_TARGET,
+    }))
+    .sort((a, b) => a.playerNumber - b.playerNumber);
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import { demoMatch } from "@/lib/demo-match";
 import { apiFetch } from "@/lib/api-client";
@@ -8,12 +8,11 @@ import { alignClipsToDuration } from "@/lib/clip-align";
 import {
   createPlayerMark,
   marksToClips,
-  summarizeMarks,
   type PlayerMark,
 } from "@/lib/player-marks";
 import { DEFAULT_MATCH_VIDEO, listAvailableMatchVideos, MATCH_VIDEOS, MAX_MATCH_DURATION_LABEL, resolvePreferredMatchVideo, type MatchVideoOption } from "@/lib/match-videos";
-import { consumeEditorBridge } from "@/lib/storage";
-import { listStaticTrackPins, resolveFollowPin } from "@/lib/track-overlay";
+import { consumeEditorBridge, loadPlayerTracks, playerTrackSourceKey, savePlayerTracks } from "@/lib/storage";
+import { listStaticTrackPins, resolveAllFollowPins, summarizePlayerTracks, TRACK_CLICKS_TARGET } from "@/lib/track-overlay";
 import type { ClipKind, PlayerStats, VideoClipMarker } from "@/lib/types";
 import { WingLogo } from "./SiteHeader";
 import { HowToPanel } from "./UiGuide";
@@ -123,18 +122,43 @@ export function VideoEditorWorkbench() {
     };
   }, [customName, customNumber, selectedPlayer]);
 
-  const markSummary = useMemo(() => summarizeMarks(marks), [marks]);
+  const trackSummary = useMemo(() => summarizePlayerTracks(marks), [marks]);
 
   const staticPins = useMemo(() => listStaticTrackPins(marks), [marks]);
 
-  const followPin = useMemo(
-    () =>
-      resolveFollowPin(marks, playheadSec, {
-        playerNumber: activeMarkTarget.number,
-        durationSec: mediaDuration,
-      }),
-    [marks, playheadSec, activeMarkTarget.number, mediaDuration],
+  const followPins = useMemo(
+    () => resolveAllFollowPins(marks, playheadSec, { durationSec: mediaDuration }),
+    [marks, playheadSec, mediaDuration],
   );
+
+  const trackSourceKey = useMemo(
+    () => playerTrackSourceKey({ matchVideoId: file ? null : matchVideoId, fileName: file?.name }),
+    [file, matchVideoId],
+  );
+
+  const skipTrackSaveRef = useRef(false);
+
+  // Restore per-player tracks when the match source changes (before save effect).
+  useEffect(() => {
+    if (!trackSourceKey) return;
+    skipTrackSaveRef.current = true;
+    const saved = loadPlayerTracks(trackSourceKey);
+    setMarks(saved as PlayerMark[]);
+    if (saved.length) {
+      setStatus(
+        `저장된 선수 추적 ${summarizePlayerTracks(saved as PlayerMark[]).length}명 · 위치핀 ${saved.filter((m) => typeof m.xNorm === "number").length}개 로드`,
+      );
+    }
+  }, [trackSourceKey]);
+
+  useEffect(() => {
+    if (!trackSourceKey) return;
+    if (skipTrackSaveRef.current) {
+      skipTrackSaveRef.current = false;
+      return;
+    }
+    savePlayerTracks(trackSourceKey, marks);
+  }, [marks, trackSourceKey]);
 
   const validClips = useMemo(
     () => alignClipsToDuration(clips, mediaDuration),
@@ -216,10 +240,15 @@ export function VideoEditorWorkbench() {
     setMarks((prev) => [...prev, mark].sort((a, b) => a.timeSec - b.timeSec));
     setPlayheadSec(mark.timeSec);
     setError(null);
+    const nextCount =
+      marks.filter((m) => m.playerNumber === mark.playerNumber && typeof m.xNorm === "number").length +
+      (typeof mark.xNorm === "number" ? 1 : 0);
     setStatus(
       typeof mark.xNorm === "number"
-        ? `#${mark.playerNumber} ${mark.playerName} 위치핀 @ ${mark.timeSec.toFixed(1)}s (총 ${marks.length + 1}개) · 이후 끝까지 추적`
-        : `#${mark.playerNumber} ${mark.playerName} 마크 @ ${mark.timeSec.toFixed(1)}s (총 ${marks.length + 1}개) · 위치 추적은 영상 클릭 필요`,
+        ? `#${mark.playerNumber} ${mark.playerName} 위치핀 ${nextCount}개 @ ${mark.timeSec.toFixed(1)}s · 선수별 경로 저장${
+            nextCount >= TRACK_CLICKS_TARGET ? " · OK" : ` · ${TRACK_CLICKS_TARGET}~7권장`
+          }`
+        : `#${mark.playerNumber} ${mark.playerName} 마크 @ ${mark.timeSec.toFixed(1)}s · 위치 추적은 영상 클릭 필요`,
     );
   }
 
@@ -423,8 +452,9 @@ export function VideoEditorWorkbench() {
         <p className="eyebrow">HIGHLIGHT DESK</p>
         <h1>경기 영상 하이라이트 편집</h1>
         <p className="lede">
-          등번호가 안 보이면 OCR 대신 <strong>번호를 직접 찍어</strong> 선수에 연결하세요.
-          위치를 한 번만 클릭해도 그 시점부터 끝까지 마젠타 핀이 따라다닙니다.
+          등번호가 안 보이면 OCR 대신 <strong>선수마다 위치를 {TRACK_CLICKS_TARGET}~7번</strong> 찍어
+          경로를 저장하세요. 재생 중 선수별 핀이 각각 따라다니며, 같은 경기 영상에서는 자동으로
+          불러옵니다.
         </p>
       </section>
 
@@ -438,11 +468,11 @@ export function VideoEditorWorkbench() {
       />
 
       <HowToPanel
-        title="번호가 안 보일 때 · 따라다니는 핀"
+        title="번호가 안 보일 때 · 선수별 추적"
         steps={[
-          "① 선수 선택 → ‘번호 찍기’ 켜기",
-          "② 영상에서 선수 위치를 한 번만 클릭해도, 그 시점부터 끝까지 핀이 유지됩니다",
-          "③ 여러 번 찍으면 마크 사이를 보간해 이동하고, 마지막 위치는 끝까지 홀드합니다",
+          `① 선수 선택 → ‘번호 찍기’ 켜기 → 그 선수를 ${TRACK_CLICKS_TARGET}~7번 위치 클릭`,
+          "② 다른 선수로 바꿔 같은 방식으로 찍기 — 선수마다 경로가 따로 저장됩니다",
+          "③ 재생하면 선수별 색 핀이 각자 따라다니고, 경기 영상을 다시 열어도 유지됩니다",
         ]}
       />
 
@@ -467,38 +497,45 @@ export function VideoEditorWorkbench() {
                 }
               }}
             />
-            {showTrackOverlay && staticPins.length > 0 ? (
+            {showTrackOverlay && (staticPins.length > 0 || followPins.length > 0) ? (
               <div className="track-overlay" aria-hidden>
                 {staticPins.map((pin) => (
                   <span
                     key={pin.id}
                     className="track-pin is-static"
-                    style={{
-                      left: `${pin.xNorm * 100}%`,
-                      top: `${pin.yNorm * 100}%`,
-                      opacity: pin.opacity,
-                    }}
+                    style={
+                      {
+                        left: `${pin.xNorm * 100}%`,
+                        top: `${pin.yNorm * 100}%`,
+                        opacity: pin.opacity,
+                        "--track-color": pin.color ?? "var(--magenta)",
+                      } as CSSProperties
+                    }
                     title={`#${pin.playerNumber} @ ${pin.timeSec.toFixed(1)}s`}
                   >
                     <span className="track-pin-dot" />
                   </span>
                 ))}
-                {followPin ? (
+                {followPins.map((pin) => (
                   <span
-                    className={`track-pin is-follow mode-${followPin.mode}`}
-                    style={{
-                      left: `${followPin.xNorm * 100}%`,
-                      top: `${followPin.yNorm * 100}%`,
-                      opacity: followPin.opacity,
-                    }}
+                    key={pin.id}
+                    className={`track-pin is-follow mode-${pin.mode}`}
+                    style={
+                      {
+                        left: `${pin.xNorm * 100}%`,
+                        top: `${pin.yNorm * 100}%`,
+                        opacity: pin.opacity,
+                        "--track-color": pin.color ?? "var(--magenta)",
+                      } as CSSProperties
+                    }
                   >
                     <span className="track-pin-ring" />
                     <span className="track-pin-badge">
-                      #{followPin.playerNumber}
-                      <small>{followPin.playerName}</small>
+                      #{pin.playerNumber}
+                      <small>{pin.playerName}</small>
                     </span>
                   </span>
-                ) : null}
+                ))}
               </div>
             ) : null}
             <div className="video-badge">
@@ -508,7 +545,9 @@ export function VideoEditorWorkbench() {
             {markMode ? (
               <p className="mark-mode-hint">
                 찍기 ON · 클릭 시 #{activeMarkTarget.number} {activeMarkTarget.name}
-                {staticPins.length > 0 ? " · 찍은 뒤 끝까지 추적" : " · 선수 위치를 클릭하세요"}
+                {staticPins.length > 0
+                  ? ` · 추적 ${followPins.length}명 표시`
+                  : " · 선수 위치를 클릭하세요"}
               </p>
             ) : null}
           </div>
@@ -528,7 +567,6 @@ export function VideoEditorWorkbench() {
                   setMatchVideoId(hit.id);
                   setPreviewUrl(hit.src);
                   setMediaDuration(hit.approxDurationSec);
-                  setMarks([]);
                   setError(null);
                   setStatus(`${hit.label} 로드 · 원본 ${hit.sourceFile}`);
                 }}
@@ -662,9 +700,18 @@ export function VideoEditorWorkbench() {
           {marks.length > 0 ? (
             <div className="mark-panel">
               <div className="mark-summary">
-                {markSummary.map((row) => (
-                  <span key={row.playerNumber}>
-                    #{row.playerNumber} {row.playerName} · {row.count}
+                {trackSummary.map((row) => (
+                  <span
+                    key={row.playerNumber}
+                    className={row.ready ? "is-ready" : "is-building"}
+                    title={
+                      row.ready
+                        ? `추적 경로 저장됨 (${row.pinCount}핀)`
+                        : `${TRACK_CLICKS_TARGET}~7번 클릭 권장 (현재 ${row.pinCount})`
+                    }
+                  >
+                    #{row.playerNumber} {row.playerName} · {row.pinCount}핀
+                    {row.ready ? " · OK" : ` · ${TRACK_CLICKS_TARGET}권장`}
                   </span>
                 ))}
                 <button type="button" className="btn ghost danger" onClick={() => setMarks([])}>
@@ -691,8 +738,8 @@ export function VideoEditorWorkbench() {
             </div>
           ) : (
             <p className="hint mark-empty">
-              등번호가 안 보이면 OCR 대신 번호를 직접 찍으세요. 현재 대상: #
-              {activeMarkTarget.number} {activeMarkTarget.name}
+              선수마다 위치를 {TRACK_CLICKS_TARGET}~7번 클릭하면 각각 추적 경로가 저장됩니다. 현재
+              대상: #{activeMarkTarget.number} {activeMarkTarget.name}
             </p>
           )}
 

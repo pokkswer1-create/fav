@@ -563,9 +563,9 @@ a {
   width: 0.55rem;
   height: 0.55rem;
   border-radius: 50%;
-  background: rgba(255, 45, 149, 0.85);
+  background: var(--track-color, rgba(255, 45, 149, 0.85));
   border: 1px solid rgba(255, 255, 255, 0.7);
-  box-shadow: 0 0 0 2px rgba(255, 45, 149, 0.25);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--track-color, #ff2d95) 35%, transparent);
 }
 
 .track-pin.is-follow {
@@ -577,8 +577,8 @@ a {
   width: 2.4rem;
   height: 2.4rem;
   border-radius: 50%;
-  border: 2px solid rgba(255, 45, 149, 0.95);
-  background: rgba(255, 45, 149, 0.12);
+  border: 2px solid var(--track-color, rgba(255, 45, 149, 0.95));
+  background: color-mix(in srgb, var(--track-color, #ff2d95) 18%, transparent);
   animation: track-pulse 1.1s ease-in-out infinite;
 }
 
@@ -592,7 +592,7 @@ a {
   padding: 0.2rem 0.35rem 0.15rem;
   border-radius: 0.35rem;
   background: rgba(6, 17, 12, 0.92);
-  border: 1px solid rgba(255, 45, 149, 0.75);
+  border: 1px solid var(--track-color, rgba(255, 45, 149, 0.75));
   color: #fff;
   font-size: 0.85rem;
   font-weight: 800;
@@ -1158,6 +1158,16 @@ a {
   padding: 0.2rem 0.45rem;
   border: 1px solid var(--line);
   background: rgba(255, 45, 149, 0.08);
+}
+
+.mark-summary span.is-ready {
+  border-color: rgba(255, 45, 149, 0.55);
+  background: rgba(255, 45, 149, 0.16);
+}
+
+.mark-summary span.is-building {
+  border-style: dashed;
+  color: var(--ink-dim);
 }
 
 .mark-list {
