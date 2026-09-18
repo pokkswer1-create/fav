@@ -28,29 +28,39 @@ describe("resolveFollowPin", () => {
     expect(resolveFollowPin(marks, 5)).toBeNull();
   });
 
-  it("snaps to a single pin near its time", () => {
+  it("holds a single pin from stamp time through the end", () => {
     const marks = [pinMark(10, 7, 0.3, 0.4, "김하늘")];
-    const hit = resolveFollowPin(marks, 10.2, { playerNumber: 7 });
-    expect(hit).toMatchObject({
+    expect(resolveFollowPin(marks, 9.9, { playerNumber: 7 })).toBeNull();
+    const atStamp = resolveFollowPin(marks, 10, { playerNumber: 7, durationSec: 180 });
+    expect(atStamp).toMatchObject({
       playerNumber: 7,
       playerName: "김하늘",
       xNorm: 0.3,
       yNorm: 0.4,
+      opacity: 1,
+      mode: "hold",
     });
-    expect(hit!.opacity).toBeGreaterThan(0.5);
+    const late = resolveFollowPin(marks, 170, { playerNumber: 7, durationSec: 180 });
+    expect(late).toMatchObject({ xNorm: 0.3, yNorm: 0.4, mode: "hold", opacity: 1 });
   });
 
-  it("fades out when far from a lone pin", () => {
+  it("hides before the first stamp", () => {
     const marks = [pinMark(10, 7, 0.3, 0.4)];
-    expect(resolveFollowPin(marks, 30, { playerNumber: 7 })).toBeNull();
+    expect(resolveFollowPin(marks, 0, { playerNumber: 7, durationSec: 60 })).toBeNull();
   });
 
   it("lerps between two pins of the same player", () => {
     const marks = [pinMark(10, 7, 0, 0, "김하늘"), pinMark(20, 7, 1, 1, "김하늘")];
-    const mid = resolveFollowPin(marks, 15, { playerNumber: 7 });
+    const mid = resolveFollowPin(marks, 15, { playerNumber: 7, durationSec: 90 });
     expect(mid).toMatchObject({ xNorm: 0.5, yNorm: 0.5, playerNumber: 7 });
     expect(mid!.opacity).toBe(1);
     expect(mid!.mode).toBe("lerp");
+  });
+
+  it("holds the last pin after the final stamp until the end", () => {
+    const marks = [pinMark(10, 7, 0, 0), pinMark(20, 7, 1, 1)];
+    const after = resolveFollowPin(marks, 80, { playerNumber: 7, durationSec: 120 });
+    expect(after).toMatchObject({ xNorm: 1, yNorm: 1, mode: "hold", opacity: 1 });
   });
 
   it("ignores other players when playerNumber is set", () => {

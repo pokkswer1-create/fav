@@ -131,8 +131,9 @@ export function VideoEditorWorkbench() {
     () =>
       resolveFollowPin(marks, playheadSec, {
         playerNumber: activeMarkTarget.number,
+        durationSec: mediaDuration,
       }),
-    [marks, playheadSec, activeMarkTarget.number],
+    [marks, playheadSec, activeMarkTarget.number, mediaDuration],
   );
 
   const validClips = useMemo(
@@ -217,7 +218,7 @@ export function VideoEditorWorkbench() {
     setError(null);
     setStatus(
       typeof mark.xNorm === "number"
-        ? `#${mark.playerNumber} ${mark.playerName} 위치핀 @ ${mark.timeSec.toFixed(1)}s (총 ${marks.length + 1}개) · 재생 시 추적`
+        ? `#${mark.playerNumber} ${mark.playerName} 위치핀 @ ${mark.timeSec.toFixed(1)}s (총 ${marks.length + 1}개) · 이후 끝까지 추적`
         : `#${mark.playerNumber} ${mark.playerName} 마크 @ ${mark.timeSec.toFixed(1)}s (총 ${marks.length + 1}개) · 위치 추적은 영상 클릭 필요`,
     );
   }
@@ -423,7 +424,7 @@ export function VideoEditorWorkbench() {
         <h1>경기 영상 하이라이트 편집</h1>
         <p className="lede">
           등번호가 안 보이면 OCR 대신 <strong>번호를 직접 찍어</strong> 선수에 연결하세요.
-          영상에서 위치를 여러 번 클릭하면 재생 중 마젠타 핀이 선수를 따라다닙니다.
+          위치를 한 번만 클릭해도 그 시점부터 끝까지 마젠타 핀이 따라다닙니다.
         </p>
       </section>
 
@@ -440,8 +441,8 @@ export function VideoEditorWorkbench() {
         title="번호가 안 보일 때 · 따라다니는 핀"
         steps={[
           "① 선수 선택 → ‘번호 찍기’ 켜기",
-          "② 영상에 선수가 보일 때 그 위치를 클릭(여러 지점·여러 시각에 찍을수록 핀이 따라다님)",
-          "③ 재생하면 마젠타 핀이 마크 사이를 보간해 이동합니다 · ‘찍은 선수 컷’ → 하이라이트",
+          "② 영상에서 선수 위치를 한 번만 클릭해도, 그 시점부터 끝까지 핀이 유지됩니다",
+          "③ 여러 번 찍으면 마크 사이를 보간해 이동하고, 마지막 위치는 끝까지 홀드합니다",
         ]}
       />
 
@@ -507,7 +508,7 @@ export function VideoEditorWorkbench() {
             {markMode ? (
               <p className="mark-mode-hint">
                 찍기 ON · 클릭 시 #{activeMarkTarget.number} {activeMarkTarget.name}
-                {staticPins.length > 0 ? " · 재생하면 핀 추적" : " · 선수 위치를 클릭하세요"}
+                {staticPins.length > 0 ? " · 찍은 뒤 끝까지 추적" : " · 선수 위치를 클릭하세요"}
               </p>
             ) : null}
           </div>

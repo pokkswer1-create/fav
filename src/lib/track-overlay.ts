@@ -7,9 +7,9 @@ export interface TrackPin {
   xNorm: number;
   yNorm: number;
   timeSec: number;
-  /** 0..1 visual strength (follow pin fades at edges). */
+  /** 0..1 visual strength. */
   opacity: number;
-  mode: "snap" | "lerp" | "static";
+  mode: "snap" | "lerp" | "hold" | "static";
 }
 
 function hasPos(m: PlayerMark): m is PlayerMark & { xNorm: number; yNorm: number } {
@@ -23,26 +23,47 @@ function positionalMarks(marks: PlayerMark[], playerNumber?: number): Array<Play
     .sort((a, b) => a.timeSec - b.timeSec);
 }
 
+function holdPin(
+  m: PlayerMark & { xNorm: number; yNorm: number },
+  t: number,
+  mode: "snap" | "hold" = "hold",
+): TrackPin {
+  return {
+    id: `follow-${m.id}`,
+    playerNumber: m.playerNumber,
+    playerName: m.playerName,
+    xNorm: m.xNorm,
+    yNorm: m.yNorm,
+    timeSec: t,
+    opacity: 1,
+    mode,
+  };
+}
+
 /**
- * Interpolate (or snap) a follow pin for playback so the jersey marker
- * appears to track the player between manual click marks.
+ * Follow pin for playback.
+ * Once a positional mark exists, the pin stays from the first mark through
+ * the end of the video (lerp between marks, then hold the last position).
  */
 export function resolveFollowPin(
   marks: PlayerMark[],
   timeSec: number,
   opts?: {
     playerNumber?: number;
-    /** Max seconds from a lone mark before the pin disappears. */
-    snapWindowSec?: number;
+    /** Video duration; when set, pin holds through the end. */
+    durationSec?: number;
   },
 ): TrackPin | null {
   const t = Number.isFinite(timeSec) ? timeSec : 0;
-  const snapWindow = opts?.snapWindowSec ?? 2.5;
+  const duration =
+    typeof opts?.durationSec === "number" && Number.isFinite(opts.durationSec) && opts.durationSec > 0
+      ? opts.durationSec
+      : Number.POSITIVE_INFINITY;
+
   let numbered = opts?.playerNumber;
   let list = positionalMarks(marks, numbered);
 
   if (!list.length && numbered == null) {
-    // Pick the player whose positional mark is nearest in time.
     const all = positionalMarks(marks);
     if (!all.length) return null;
     let best = all[0];
@@ -60,56 +81,22 @@ export function resolveFollowPin(
 
   if (!list.length) return null;
 
+  const first = list[0];
+  const last = list[list.length - 1];
+
+  // Before the first mark: no follow yet (user stamps, then we stick to the end).
+  if (t < first.timeSec) return null;
+
+  // Past the end of the media: hide.
+  if (t > duration) return null;
+
   if (list.length === 1) {
-    const m = list[0];
-    const dist = Math.abs(m.timeSec - t);
-    if (dist > snapWindow) return null;
-    const opacity = Math.max(0, 1 - dist / snapWindow);
-    if (opacity <= 0.05) return null;
-    return {
-      id: `follow-${m.id}`,
-      playerNumber: m.playerNumber,
-      playerName: m.playerName,
-      xNorm: m.xNorm,
-      yNorm: m.yNorm,
-      timeSec: t,
-      opacity,
-      mode: "snap",
-    };
+    return holdPin(first, t, "hold");
   }
 
-  // Before first / after last: snap with fade
-  if (t <= list[0].timeSec) {
-    const m = list[0];
-    const dist = m.timeSec - t;
-    if (dist > snapWindow) return null;
-    const opacity = Math.max(0.35, 1 - dist / snapWindow);
-    return {
-      id: `follow-${m.id}`,
-      playerNumber: m.playerNumber,
-      playerName: m.playerName,
-      xNorm: m.xNorm,
-      yNorm: m.yNorm,
-      timeSec: t,
-      opacity,
-      mode: "snap",
-    };
-  }
-  const last = list[list.length - 1];
+  // After last mark: hold last position until the end.
   if (t >= last.timeSec) {
-    const dist = t - last.timeSec;
-    if (dist > snapWindow) return null;
-    const opacity = Math.max(0.35, 1 - dist / snapWindow);
-    return {
-      id: `follow-${last.id}`,
-      playerNumber: last.playerNumber,
-      playerName: last.playerName,
-      xNorm: last.xNorm,
-      yNorm: last.yNorm,
-      timeSec: t,
-      opacity,
-      mode: "snap",
-    };
+    return holdPin(last, t, "hold");
   }
 
   let i = 0;
