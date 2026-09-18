@@ -213,6 +213,7 @@ export function VideoEditorWorkbench() {
       yNorm: opts?.yNorm,
     });
     setMarks((prev) => [...prev, mark].sort((a, b) => a.timeSec - b.timeSec));
+    setPlayheadSec(mark.timeSec);
     setError(null);
     setStatus(
       typeof mark.xNorm === "number"
@@ -255,9 +256,14 @@ export function VideoEditorWorkbench() {
 
   function seekToMark(mark: PlayerMark) {
     const video = videoRef.current;
+    setPlayheadSec(mark.timeSec);
     if (!video) return;
-    video.currentTime = mark.timeSec;
-    void video.play().catch(() => undefined);
+    try {
+      video.currentTime = mark.timeSec;
+      void video.play().catch(() => undefined);
+    } catch {
+      // Media may be unavailable in some environments; pin still updates via playheadSec.
+    }
   }
 
   async function autoDetectScenes() {
