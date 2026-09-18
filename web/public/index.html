@@ -135,7 +135,7 @@
       매수관심=조건+돌파 /
       분할관심=상위+돌파근접(소액 분할) /
       돌파대기=조건 좋음→고점 돌파 순간 노리기 /
-      관심목록·회피=우선순위 낮음
+      손절 −6% · 1차익절 +8% · 2차익절 +15% (참고)
     </div>
 
     <div class="row">
@@ -167,8 +167,9 @@
       <table>
         <thead>
           <tr>
-            <th>순위</th><th>종목</th><th>테마</th><th>액션</th><th>추천점수</th>
-            <th>현재가</th><th>실시간%</th><th>기간%</th><th>큰손(억)</th><th>돌파/기대</th><th>초보 설명</th>
+            <th>순위</th><th>종목</th><th>테마</th><th>액션</th><th>현재가</th>
+            <th>손절가</th><th>1차익절</th><th>2차익절</th>
+            <th>큰손(억)</th><th>돌파/기대</th><th>초보 설명</th>
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
@@ -227,6 +228,10 @@
         const chg = Number(p.realtime_change_pct || 0);
         const cls = chg >= 0 ? "up" : "down";
         const exp = p.expectancy || {};
+        const risk = p.risk || {};
+        const stop = risk.stop_price || p.stop_price || 0;
+        const take1 = risk.take1_price || p.take1_price || 0;
+        const take2 = risk.take2_price || p.take2_price || 0;
         return `
           <div class="card">
             <div class="rank">${p.pick_label || ""}</div>
@@ -234,23 +239,25 @@
             <div class="price">${fmt(p.latest_close)} <span class="${cls}">${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%</span></div>
             <div class="action ${actionClass(p.action)}">${p.action || "-"}</div>
             <div class="why">${p.reason || ""}</div>
+            <div class="why" style="margin-top:8px"><strong style="color:#e0a45a">손절</strong> ${fmt(stop)} (−${risk.stop_pct || 6}%) · <strong style="color:#5ec28a">1차익절</strong> ${fmt(take1)} (+${risk.take1_pct || 8}%) · <strong style="color:#5ec28a">2차</strong> ${fmt(take2)}</div>
             <div class="why" style="margin-top:8px">${p.beginner_summary || p.pick_why || ""}</div>
-            <div class="why" style="margin-top:6px">돌파 ${p.is_breakout ? "O" : "X"} · 기대수익 ${Number(exp.expectancy_pct || 0).toFixed(1)}% (승률 ${exp.win_rate_pct || 0}% / 표본 ${exp.sample_size || 0})</div>
+            <div class="why" style="margin-top:6px">돌파 ${p.is_breakout ? "O" : "X"} · 기대수익 ${Number(exp.expectancy_pct || 0).toFixed(1)}%</div>
           </div>`;
       }).join("") || "<p class='status'>추천 없음</p>";
 
       document.getElementById("tbody").innerHTML = (data.picks || []).map((p) => {
         const exp = p.expectancy || {};
+        const risk = p.risk || {};
         return `
         <tr>
           <td>${p.pick_rank}</td>
           <td>${p.name} (${p.ticker})</td>
           <td>${p.theme}</td>
           <td>${p.action}</td>
-          <td>${p.pick_score}</td>
           <td>${fmt(p.latest_close)}</td>
-          <td>${Number(p.realtime_change_pct || 0).toFixed(2)}</td>
-          <td>${Number(p.price_change_pct || 0).toFixed(2)}</td>
+          <td>${fmt(risk.stop_price || p.stop_price)}</td>
+          <td>${fmt(risk.take1_price || p.take1_price)}</td>
+          <td>${fmt(risk.take2_price || p.take2_price)}</td>
           <td>${eok(p.smart_money_net)}</td>
           <td>${p.is_breakout ? "O" : ""} / ${Number(exp.expectancy_pct || 0).toFixed(1)}%</td>
           <td>${p.beginner_summary || p.pick_why || ""}</td>

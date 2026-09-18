@@ -124,28 +124,41 @@ else:
                 f"기대수익 {float(exp.get('expectancy_pct', 0)):+.1f}% "
                 f"(승률 {exp.get('win_rate_pct', 0)}% / 표본 {exp.get('sample_size', 0)})"
             )
+            risk = p.get("risk") or {}
+            stop = risk.get("stop_price") or 0
+            take1 = risk.get("take1_price") or 0
+            take2 = risk.get("take2_price") or 0
+            st.write(
+                f"**손절** {stop:,.0f}원 (−{risk.get('stop_pct', 6)}%) · "
+                f"**1차익절** {take1:,.0f}원 (+{risk.get('take1_pct', 8)}%) · "
+                f"**2차익절** {take2:,.0f}원 (+{risk.get('take2_pct', 15)}%)"
+            )
             if st.button("이 종목 상세", key=f"pick_{p['ticker']}"):
                 st.session_state.selected_ticker = p["ticker"]
 
     pick_rows = []
     for p in picks:
         exp = p.get("expectancy") or {}
+        risk = p.get("risk") or {}
         pick_rows.append(
             {
                 "순위": p.get("pick_rank", 0),
                 "종목": p["name"],
                 "테마": p["theme"],
                 "액션": p.get("action", ""),
+                "현재가": p.get("latest_close", 0),
+                "손절가": risk.get("stop_price", 0),
+                "1차익절": risk.get("take1_price", 0),
+                "2차익절": risk.get("take2_price", 0),
+                "손절%": risk.get("stop_pct", 6),
+                "익절%": risk.get("take1_pct", 8),
                 "초보 한줄": p.get("beginner_summary", ""),
                 "돌파": "O" if p.get("is_breakout") else "",
                 "기대수익%": exp.get("expectancy_pct", 0),
                 "승률%": exp.get("win_rate_pct", 0),
-                "표본": exp.get("sample_size", 0),
                 "추천점수": p.get("pick_score", 0),
-                "현재가": p.get("latest_close", 0),
                 "큰손(억)": round(float(p.get("smart_money_net", 0)) / 1e8, 1),
                 "기간%": p.get("price_change_pct", 0),
-                "고른이유": p.get("pick_why", ""),
             }
         )
     st.dataframe(pd.DataFrame(pick_rows), use_container_width=True, hide_index=True)
