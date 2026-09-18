@@ -337,6 +337,17 @@
       renderChart(pick);
     }
 
+    function fillThemeSelect(themes) {
+      const sel = document.getElementById("theme");
+      const current = sel.value || "전체";
+      const names = Array.isArray(themes) && themes.length ? themes : null;
+      if (!names) return;
+      sel.innerHTML = [`<option value="전체">전체 테마 (${names.length})</option>`]
+        .concat(names.map((t) => `<option value="${t}">${t}</option>`))
+        .join("");
+      sel.value = names.includes(current) || current === "전체" ? current : "전체";
+    }
+
     async function scan() {
       const btn = document.getElementById("scanBtn");
       const status = document.getElementById("status");
@@ -348,8 +359,9 @@
         const res = await fetch(`/api/scan?theme=${encodeURIComponent(theme)}&top=5&lookback=20`);
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "스캔 실패");
+        fillThemeSelect(data.themes);
         render(data);
-        status.textContent = `스캔시각 ${data.scanned_at} · ${data.regime?.data_source || ""} · ${data.regime?.market_status || ""}`;
+        status.textContent = `스캔시각 ${data.scanned_at} · 테마 ${data.themes?.length || "-"}개 · 종목 ${data.universe_size || data.count || "-"} · ${data.regime?.market_status || ""}`;
       } catch (err) {
         status.textContent = String(err.message || err);
         status.className = "status err";
