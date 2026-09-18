@@ -1,4 +1,4 @@
-import { stocksForTheme } from "../lib/themes.js";
+import { listThemes, stocksForTheme } from "../lib/themes.js";
 import {
   fetchDailyPrices,
   fetchInvestorTrend,
@@ -62,6 +62,7 @@ async function buildSnapshot(item, lookbackDays, quote) {
   const expectancy = backtestSetupExpectancy(ohlcv, flow, lookbackDays);
   const latest = quote?.price || (ohlcv.length ? ohlcv[ohlcv.length - 1].close : 0);
   const risk = riskPlan(latest, Number(score.score || 0));
+  const chartSlice = ohlcv.slice(-60);
   return {
     ticker: item.ticker,
     name: item.name,
@@ -77,6 +78,10 @@ async function buildSnapshot(item, lookbackDays, quote) {
     stop_price: risk.stop_price,
     take1_price: risk.take1_price,
     take2_price: risk.take2_price,
+    chart: {
+      dates: chartSlice.map((r) => r.date),
+      closes: chartSlice.map((r) => r.close),
+    },
     data_source: "naver_live",
   };
 }
@@ -103,10 +108,17 @@ export default async function handler(req, res) {
     const smartProxy = Number(idx.change_pct || 0) >= 0 ? 1 : -1;
     const regime = marketRegime(Number(idx.change_pct || 0), smartProxy);
     const universe = stocksForTheme(theme === "전체" ? null : theme);
-    const quotes = await fetchRealtimeQuotes(universe.map((u) => u.ticker));
+    const uniqueItems = [];
+    const seenTickers = new Set();
+    for (const item of universe) {
+      if (seenTickers.has(item.ticker)) continue;
+      seenTickers.add(item.ticker);
+      uniqueItems.push(item);
+    }
+    const quotes = await fetchRealtimeQuotes(uniqueItems.map((u) => u.ticker));
 
-    const raw = (
-      await mapPool(universe, 6, async (item) => {
+    const snapshots = (
+      await mapPool(uniqueItems, 10, async (item) => {
         try {
           return await buildSnapshot(item, lookback, quotes[item.ticker]);
         } catch (err) {
@@ -114,6 +126,14 @@ export default async function handler(req, res) {
         }
       })
     ).filter(Boolean);
+    const byTicker = new Map(snapshots.map((s) => [s.ticker, s]));
+    const raw = universe
+      .map((item) => {
+        const snap = byTicker.get(item.ticker);
+        if (!snap) return null;
+        return { ...snap, theme: item.theme, name: item.name };
+      })
+      .filter(Boolean);
 
     const picks = pickStocks(raw, topN).map((row) => {
       const comment = actionComment(row, regime);
@@ -147,9 +167,11 @@ export default async function handler(req, res) {
       },
       picks,
       theme_top,
+      themes: listThemes(),
       scanned_at: new Date().toISOString().replace("T", " ").slice(0, 19),
       mode: "live",
       count: raw.length,
+      universe_size: uniqueItems.length,
     });
   } catch (err) {
     res.status(500).json({ error: String(err?.message || err) });

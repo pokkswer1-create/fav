@@ -1,4 +1,4 @@
-import { stocksForTheme } from "../lib/themes.js";
+import { listThemes, stocksForTheme } from "../lib/themes.js";
 import {
   fetchDailyPrices,
   fetchInvestorTrend,
@@ -62,6 +62,7 @@ async function buildSnapshot(item, lookbackDays, quote) {
   const expectancy = backtestSetupExpectancy(ohlcv, flow, lookbackDays);
   const latest = quote?.price || (ohlcv.length ? ohlcv[ohlcv.length - 1].close : 0);
   const risk = riskPlan(latest, Number(score.score || 0));
+  const chartSlice = ohlcv.slice(-60);
   return {
     ticker: item.ticker,
     name: item.name,
@@ -77,6 +78,10 @@ async function buildSnapshot(item, lookbackDays, quote) {
     stop_price: risk.stop_price,
     take1_price: risk.take1_price,
     take2_price: risk.take2_price,
+    chart: {
+      dates: chartSlice.map((r) => r.date),
+      closes: chartSlice.map((r) => r.close),
+    },
     data_source: "naver_live",
   };
 }

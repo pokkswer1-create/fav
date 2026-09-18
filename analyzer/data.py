@@ -221,19 +221,26 @@ def scan_market(
     leaders_only: bool = True,
     flat_only: bool = True,
     demo: bool = False,
-    max_workers: int = 8,
+    max_workers: int = 12,
 ) -> dict:
     regime_info = fetch_market_regime(demo=demo)
     regime = regime_info["regime"]
     universe = stocks_for_theme(theme)
+    unique_items: list[dict] = []
+    seen: set[str] = set()
+    for item in universe:
+        if item["ticker"] in seen:
+            continue
+        seen.add(item["ticker"])
+        unique_items.append(item)
     quotes: dict[str, dict] = {}
     if not demo:
         try:
-            quotes = fetch_realtime_quotes([x["ticker"] for x in universe])
+            quotes = fetch_realtime_quotes([x["ticker"] for x in unique_items])
         except Exception:  # noqa: BLE001
             quotes = {}
 
-    raw: list[dict] = []
+    snap_by_ticker: dict[str, dict] = {}
     errors: list[dict] = []
 
     def _one(item: dict) -> dict:
@@ -248,14 +255,23 @@ def scan_market(
         )
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = {pool.submit(_one, item): item for item in universe}
+        futures = {pool.submit(_one, item): item for item in unique_items}
         for fut in as_completed(futures):
             item = futures[fut]
             try:
-                raw.append(fut.result())
+                snap_by_ticker[item["ticker"]] = fut.result()
             except Exception as exc:  # noqa: BLE001
                 errors.append({"ticker": item["ticker"], "name": item["name"], "error": str(exc)})
 
+    raw: list[dict] = []
+    for item in universe:
+        snap = snap_by_ticker.get(item["ticker"])
+        if not snap:
+            continue
+        cloned = dict(snap)
+        cloned["theme"] = item["theme"]
+        cloned["name"] = item["name"]
+        raw.append(cloned)
     candidates = screen_candidates(
         raw,
         min_score=min_score,

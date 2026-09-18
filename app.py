@@ -239,11 +239,76 @@ st.markdown(
 )
 
 if analysis.get("dates"):
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.6, 0.4], vertical_spacing=0.08)
-    fig.add_trace(go.Scatter(x=analysis["dates"], y=analysis["closes"], name="종가"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=analysis["dates"], y=analysis["cum_smart"], name="누적 큰손"), row=2, col=1)
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.65, 0.35], vertical_spacing=0.08)
+    fig.add_trace(go.Scatter(x=analysis["dates"], y=analysis["closes"], name="종가", line=dict(color="#4aa3ff", width=2)), row=1, col=1)
+    # 손절/익절/현재가 수평선
+    x0, x1 = analysis["dates"][0], analysis["dates"][-1]
+    entry = float(selected.get("latest_close") or 0)
+    shapes = []
+    annotations = []
+    levels = [
+        ("손절", risk.get("stop_price"), "#d66a6a", "dash"),
+        ("현재가", entry, "#eef3f7", "solid"),
+        ("1차익절", risk.get("take1_price"), "#5ec28a", "dash"),
+        ("2차익절", risk.get("take2_price"), "#2bb0a6", "dot"),
+    ]
+    for label, y, color, dash in levels:
+        if not y:
+            continue
+        yv = float(y)
+        shapes.append(
+            dict(
+                type="line",
+                xref="x",
+                yref="y",
+                x0=x0,
+                x1=x1,
+                y0=yv,
+                y1=yv,
+                line=dict(color=color, width=1.5, dash=dash),
+            )
+        )
+        annotations.append(
+            dict(
+                xref="paper",
+                yref="y",
+                x=1.01,
+                y=yv,
+                text=f"{label} {yv:,.0f}",
+                showarrow=False,
+                font=dict(size=11, color=color),
+                xanchor="left",
+            )
+        )
+    if selected.get("breakout", {}).get("lookback_high"):
+        bh = float(selected["breakout"]["lookback_high"])
+        shapes.append(
+            dict(
+                type="line",
+                xref="x",
+                yref="y",
+                x0=x0,
+                x1=x1,
+                y0=bh,
+                y1=bh,
+                line=dict(color="#e0a45a", width=1, dash="dashdot"),
+            )
+        )
+        annotations.append(
+            dict(
+                xref="paper",
+                yref="y",
+                x=1.01,
+                y=bh,
+                text=f"돌파기준 {bh:,.0f}",
+                showarrow=False,
+                font=dict(size=11, color="#e0a45a"),
+                xanchor="left",
+            )
+        )
+    fig.add_trace(go.Scatter(x=analysis["dates"], y=analysis["cum_smart"], name="누적 큰손", line=dict(color="#2bb0a6")), row=2, col=1)
     fig.add_trace(
-        go.Scatter(x=analysis["dates"], y=analysis["cum_foreign"], name="누적 외인", line=dict(dash="dot")),
+        go.Scatter(x=analysis["dates"], y=analysis["cum_foreign"], name="누적 외인", line=dict(dash="dot", color="#93a4b3")),
         row=2,
         col=1,
     )
@@ -252,12 +317,19 @@ if analysis.get("dates"):
             x=analysis["dates"],
             y=analysis["cum_institution"],
             name="누적 기관",
-            line=dict(dash="dash"),
+            line=dict(dash="dash", color="#e0a45a"),
         ),
         row=2,
         col=1,
     )
-    fig.update_layout(height=560, margin=dict(l=10, r=10, t=30, b=10), legend=dict(orientation="h"))
+    fig.update_layout(
+        height=620,
+        margin=dict(l=10, r=110, t=30, b=10),
+        legend=dict(orientation="h"),
+        shapes=shapes,
+        annotations=annotations,
+    )
+    st.caption("차트 가로선: 손절(빨강) · 현재가(흰) · 1차익절(연녹) · 2차익절(청녹) · 돌파기준(주황)")
     st.plotly_chart(fig, use_container_width=True)
 
 if result["errors"]:

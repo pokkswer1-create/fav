@@ -76,7 +76,11 @@
       border-radius: 16px;
       padding: 14px;
       min-height: 170px;
+      cursor: pointer;
+      transition: border-color 0.15s ease, transform 0.15s ease;
     }
+    .card:hover { border-color: rgba(43, 176, 166, 0.45); transform: translateY(-1px); }
+    .card.active { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(43, 176, 166, 0.35); }
     .card .rank { color: var(--accent); font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; }
     .card h3 { margin: 0 0 8px; font-size: 1.05rem; }
     .price { font-family: "JetBrains Mono", monospace; margin-bottom: 8px; }
@@ -120,10 +124,19 @@
       margin-bottom: 18px;
     }
     .help strong { color: var(--accent); display: block; margin-bottom: 4px; }
+    .chart-box {
+      background: rgba(24, 32, 41, 0.85);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px 16px 10px;
+    }
+    .chart-box canvas { width: 100% !important; max-height: 360px; }
+    .legend-cap { color: var(--muted); font-size: 0.82rem; margin: 8px 0 0; line-height: 1.45; }
     @media (max-width: 800px) {
       .bar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <div class="wrap">
@@ -146,6 +159,18 @@
         <option>AI/로봇</option>
         <option>바이오</option>
         <option>자동차/자율주행</option>
+        <option>방산/우주</option>
+        <option>원전/전력</option>
+        <option>조선/해운</option>
+        <option>인터넷/플랫폼</option>
+        <option>엔터/미디어</option>
+        <option>금융/증권</option>
+        <option>건설/인프라</option>
+        <option>화장품/소비</option>
+        <option>석유화학</option>
+        <option>통신/IT</option>
+        <option>음식료</option>
+        <option>수소/신재생</option>
       </select>
       <button class="primary" id="scanBtn">스캔 실행</button>
       <span class="status" id="status"></span>
@@ -161,6 +186,16 @@
 
     <h2>오늘 데이터 기반 골라준 종목</h2>
     <div class="cards" id="cards"></div>
+
+    <h2>가격 차트 · 손절/익절</h2>
+    <div class="chart-box">
+      <div class="row" style="margin-bottom:10px">
+        <select id="chartPick" aria-label="차트 종목"></select>
+        <span class="status" id="chartCap">카드를 고르면 손절·익절 선이 표시됩니다.</span>
+      </div>
+      <canvas id="priceChart" height="140"></canvas>
+      <p class="legend-cap">가로선: <span style="color:#d66a6a">손절</span> · <span style="color:#eef3f7">현재가</span> · <span style="color:#5ec28a">1차익절</span> · <span style="color:#2bb0a6">2차익절</span> · <span style="color:#e0a45a">돌파기준</span></p>
+    </div>
 
     <h2>추천 상세</h2>
     <div class="scroll">
@@ -194,6 +229,114 @@
       return "bad";
     };
 
+    let latestPicks = [];
+    let priceChart = null;
+    let selectedTicker = null;
+
+    function levelDataset(label, value, color, dash) {
+      return {
+        label,
+        data: [],
+        borderColor: color,
+        borderWidth: label === "현재가" ? 2 : 1.5,
+        borderDash: dash || [],
+        pointRadius: 0,
+        fill: false,
+        tension: 0,
+        _level: Number(value) || 0,
+      };
+    }
+
+    function renderChart(pick) {
+      const cap = document.getElementById("chartCap");
+      const canvas = document.getElementById("priceChart");
+      if (!pick || !pick.chart || !(pick.chart.dates || []).length) {
+        if (priceChart) {
+          priceChart.destroy();
+          priceChart = null;
+        }
+        cap.textContent = "차트 데이터가 없습니다.";
+        return;
+      }
+      const dates = pick.chart.dates;
+      const closes = pick.chart.closes;
+      const risk = pick.risk || {};
+      const stop = risk.stop_price || pick.stop_price || 0;
+      const take1 = risk.take1_price || pick.take1_price || 0;
+      const take2 = risk.take2_price || pick.take2_price || 0;
+      const entry = Number(pick.latest_close || 0);
+      const breakHigh = Number(pick.breakout?.lookback_high || 0);
+      const flat = (v) => dates.map(() => Number(v));
+
+      const datasets = [
+        {
+          label: "종가",
+          data: closes,
+          borderColor: "#4aa3ff",
+          backgroundColor: "rgba(74, 163, 255, 0.12)",
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: true,
+          tension: 0.15,
+        },
+        { ...levelDataset("손절", stop, "#d66a6a", [6, 4]), data: flat(stop) },
+        { ...levelDataset("현재가", entry, "#eef3f7", []), data: flat(entry) },
+        { ...levelDataset("1차익절", take1, "#5ec28a", [6, 4]), data: flat(take1) },
+        { ...levelDataset("2차익절", take2, "#2bb0a6", [2, 4]), data: flat(take2) },
+      ];
+      if (breakHigh) {
+        datasets.push({ ...levelDataset("돌파기준", breakHigh, "#e0a45a", [8, 3, 2, 3]), data: flat(breakHigh) });
+      }
+
+      if (priceChart) priceChart.destroy();
+      priceChart = new Chart(canvas, {
+        type: "line",
+        data: { labels: dates, datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: {
+              labels: { color: "#93a4b3", boxWidth: 12, font: { size: 11 } },
+            },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.parsed.y)}원`,
+              },
+            },
+          },
+          scales: {
+            x: {
+              ticks: { color: "#93a4b3", maxTicksLimit: 8, maxRotation: 0 },
+              grid: { color: "rgba(238,243,247,0.06)" },
+            },
+            y: {
+              ticks: {
+                color: "#93a4b3",
+                callback: (v) => Number(v).toLocaleString("ko-KR"),
+              },
+              grid: { color: "rgba(238,243,247,0.08)" },
+            },
+          },
+        },
+      });
+      cap.textContent = `${pick.name} (${pick.ticker}) · 최근 ${dates.length}일 · 손절 ${fmt(stop)} / 1차 ${fmt(take1)} / 2차 ${fmt(take2)}`;
+    }
+
+    function selectPick(ticker) {
+      selectedTicker = ticker;
+      const pick = latestPicks.find((p) => p.ticker === ticker) || latestPicks[0];
+      if (!pick) return;
+      selectedTicker = pick.ticker;
+      document.querySelectorAll(".card").forEach((el) => {
+        el.classList.toggle("active", el.dataset.ticker === selectedTicker);
+      });
+      const sel = document.getElementById("chartPick");
+      if (sel.value !== selectedTicker) sel.value = selectedTicker;
+      renderChart(pick);
+    }
+
     async function scan() {
       const btn = document.getElementById("scanBtn");
       const status = document.getElementById("status");
@@ -223,8 +366,9 @@
       document.getElementById("mPick").textContent = (data.picks || []).length;
       document.getElementById("mMode").textContent = data.mode || "live";
 
+      latestPicks = data.picks || [];
       const cards = document.getElementById("cards");
-      cards.innerHTML = (data.picks || []).map((p) => {
+      cards.innerHTML = latestPicks.map((p) => {
         const chg = Number(p.realtime_change_pct || 0);
         const cls = chg >= 0 ? "up" : "down";
         const exp = p.expectancy || {};
@@ -233,7 +377,7 @@
         const take1 = risk.take1_price || p.take1_price || 0;
         const take2 = risk.take2_price || p.take2_price || 0;
         return `
-          <div class="card">
+          <div class="card" data-ticker="${p.ticker}" role="button" tabindex="0">
             <div class="rank">${p.pick_label || ""}</div>
             <h3>${p.name}</h3>
             <div class="price">${fmt(p.latest_close)} <span class="${cls}">${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%</span></div>
@@ -245,7 +389,31 @@
           </div>`;
       }).join("") || "<p class='status'>추천 없음</p>";
 
-      document.getElementById("tbody").innerHTML = (data.picks || []).map((p) => {
+      cards.querySelectorAll(".card").forEach((el) => {
+        el.addEventListener("click", () => selectPick(el.dataset.ticker));
+        el.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter" || ev.key === " ") {
+            ev.preventDefault();
+            selectPick(el.dataset.ticker);
+          }
+        });
+      });
+
+      const sel = document.getElementById("chartPick");
+      sel.innerHTML = latestPicks.map((p) =>
+        `<option value="${p.ticker}">${p.pick_rank || ""}. ${p.name} (${p.ticker})</option>`
+      ).join("") || `<option value="">추천 없음</option>`;
+
+      const keep = latestPicks.some((p) => p.ticker === selectedTicker)
+        ? selectedTicker
+        : (latestPicks[0] && latestPicks[0].ticker);
+      if (keep) selectPick(keep);
+      else {
+        document.getElementById("chartCap").textContent = "추천 종목이 없습니다.";
+        if (priceChart) { priceChart.destroy(); priceChart = null; }
+      }
+
+      document.getElementById("tbody").innerHTML = latestPicks.map((p) => {
         const exp = p.expectancy || {};
         const risk = p.risk || {};
         return `
@@ -269,6 +437,7 @@
     }
 
     document.getElementById("scanBtn").addEventListener("click", scan);
+    document.getElementById("chartPick").addEventListener("change", (e) => selectPick(e.target.value));
     scan();
   </script>
 </body>
