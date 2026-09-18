@@ -13,6 +13,7 @@ import {
 } from "@/lib/player-marks";
 import { DEFAULT_MATCH_VIDEO, listAvailableMatchVideos, MATCH_VIDEOS, MAX_MATCH_DURATION_LABEL, resolvePreferredMatchVideo, type MatchVideoOption } from "@/lib/match-videos";
 import { consumeEditorBridge } from "@/lib/storage";
+import { listStaticTrackPins, resolveFollowPin } from "@/lib/track-overlay";
 import type { ClipKind, PlayerStats, VideoClipMarker } from "@/lib/types";
 import { WingLogo } from "./SiteHeader";
 import { HowToPanel } from "./UiGuide";
@@ -62,6 +63,8 @@ export function VideoEditorWorkbench() {
   const [clips, setClips] = useState<VideoClipMarker[]>(() => cloneDemoClips());
   const [marks, setMarks] = useState<PlayerMark[]>([]);
   const [markMode, setMarkMode] = useState(false);
+  const [playheadSec, setPlayheadSec] = useState(0);
+  const [showTrackOverlay, setShowTrackOverlay] = useState(true);
   const [customNumber, setCustomNumber] = useState("");
   const [customName, setCustomName] = useState("");
   const [mediaDuration, setMediaDuration] = useState(DEFAULT_MATCH_VIDEO.approxDurationSec);
@@ -122,10 +125,35 @@ export function VideoEditorWorkbench() {
 
   const markSummary = useMemo(() => summarizeMarks(marks), [marks]);
 
+  const staticPins = useMemo(() => listStaticTrackPins(marks), [marks]);
+
+  const followPin = useMemo(
+    () =>
+      resolveFollowPin(marks, playheadSec, {
+        playerNumber: activeMarkTarget.number,
+      }),
+    [marks, playheadSec, activeMarkTarget.number],
+  );
+
   const validClips = useMemo(
     () => alignClipsToDuration(clips, mediaDuration),
     [clips, mediaDuration],
   );
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const sync = () => setPlayheadSec(video.currentTime);
+    video.addEventListener("timeupdate", sync);
+    video.addEventListener("seeked", sync);
+    video.addEventListener("play", sync);
+    sync();
+    return () => {
+      video.removeEventListener("timeupdate", sync);
+      video.removeEventListener("seeked", sync);
+      video.removeEventListener("play", sync);
+    };
+  }, [previewUrl]);
 
   const totalSeconds = useMemo(
     () => validClips.reduce((sum, c) => sum + (c.endSec - c.startSec), 0),
@@ -187,7 +215,9 @@ export function VideoEditorWorkbench() {
     setMarks((prev) => [...prev, mark].sort((a, b) => a.timeSec - b.timeSec));
     setError(null);
     setStatus(
-      `#${mark.playerNumber} ${mark.playerName} 마크 @ ${mark.timeSec.toFixed(1)}s (총 ${marks.length + 1}개)`,
+      typeof mark.xNorm === "number"
+        ? `#${mark.playerNumber} ${mark.playerName} 위치핀 @ ${mark.timeSec.toFixed(1)}s (총 ${marks.length + 1}개) · 재생 시 추적`
+        : `#${mark.playerNumber} ${mark.playerName} 마크 @ ${mark.timeSec.toFixed(1)}s (총 ${marks.length + 1}개) · 위치 추적은 영상 클릭 필요`,
     );
   }
 
@@ -386,8 +416,8 @@ export function VideoEditorWorkbench() {
         <p className="eyebrow">HIGHLIGHT DESK</p>
         <h1>경기 영상 하이라이트 편집</h1>
         <p className="lede">
-          등번호가 안 보이면 OCR 대신 <strong>번호를 직접 찍어</strong> 선수에 연결한 뒤, 찍힌
-          선수 컷으로 하이라이트를 만드세요.
+          등번호가 안 보이면 OCR 대신 <strong>번호를 직접 찍어</strong> 선수에 연결하세요.
+          영상에서 위치를 여러 번 클릭하면 재생 중 마젠타 핀이 선수를 따라다닙니다.
         </p>
       </section>
 
@@ -401,11 +431,11 @@ export function VideoEditorWorkbench() {
       />
 
       <HowToPanel
-        title="번호가 안 보일 때"
+        title="번호가 안 보일 때 · 따라다니는 핀"
         steps={[
-          "① 선수 선택(또는 번호·이름 직접 입력) → ‘번호 찍기’ 켜기",
-          "② 영상에서 그 선수가 보일 때 클릭(또는 ‘지금 시각에 찍기’)",
-          "③ ‘찍은 선수 컷 만들기’ → 하이라이트 생성",
+          "① 선수 선택 → ‘번호 찍기’ 켜기",
+          "② 영상에 선수가 보일 때 그 위치를 클릭(여러 지점·여러 시각에 찍을수록 핀이 따라다님)",
+          "③ 재생하면 마젠타 핀이 마크 사이를 보간해 이동합니다 · ‘찍은 선수 컷’ → 하이라이트",
         ]}
       />
 
@@ -430,6 +460,40 @@ export function VideoEditorWorkbench() {
                 }
               }}
             />
+            {showTrackOverlay && staticPins.length > 0 ? (
+              <div className="track-overlay" aria-hidden>
+                {staticPins.map((pin) => (
+                  <span
+                    key={pin.id}
+                    className="track-pin is-static"
+                    style={{
+                      left: `${pin.xNorm * 100}%`,
+                      top: `${pin.yNorm * 100}%`,
+                      opacity: pin.opacity,
+                    }}
+                    title={`#${pin.playerNumber} @ ${pin.timeSec.toFixed(1)}s`}
+                  >
+                    <span className="track-pin-dot" />
+                  </span>
+                ))}
+                {followPin ? (
+                  <span
+                    className={`track-pin is-follow mode-${followPin.mode}`}
+                    style={{
+                      left: `${followPin.xNorm * 100}%`,
+                      top: `${followPin.yNorm * 100}%`,
+                      opacity: followPin.opacity,
+                    }}
+                  >
+                    <span className="track-pin-ring" />
+                    <span className="track-pin-badge">
+                      #{followPin.playerNumber}
+                      <small>{followPin.playerName}</small>
+                    </span>
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
             <div className="video-badge">
               <WingLogo size={28} />
               <span>FAV CUT</span>
@@ -437,6 +501,7 @@ export function VideoEditorWorkbench() {
             {markMode ? (
               <p className="mark-mode-hint">
                 찍기 ON · 클릭 시 #{activeMarkTarget.number} {activeMarkTarget.name}
+                {staticPins.length > 0 ? " · 재생하면 핀 추적" : " · 선수 위치를 클릭하세요"}
               </p>
             ) : null}
           </div>
@@ -547,6 +612,15 @@ export function VideoEditorWorkbench() {
               onClick={() => setMarkMode((v) => !v)}
             >
               {markMode ? "번호 찍기 ON" : "번호 찍기"}
+            </button>
+            <button
+              type="button"
+              className={`btn ghost ${showTrackOverlay ? "is-active" : ""}`}
+              disabled={locked || staticPins.length === 0}
+              onClick={() => setShowTrackOverlay((v) => !v)}
+              title="위치 핀 오버레이 표시"
+            >
+              {showTrackOverlay ? "추적 핀 ON" : "추적 핀"}
             </button>
             <button type="button" className="btn ghost" disabled={locked} onClick={() => addMarkAtTime()}>
               지금 시각에 #{activeMarkTarget.number} 찍기
