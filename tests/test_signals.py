@@ -5,6 +5,7 @@ from analyzer.signals import (
     backtest_setup_expectancy,
     beginner_explain,
     detect_breakout,
+    simulate_trade_detail,
     simulate_trade_path,
 )
 
@@ -68,12 +69,19 @@ def test_simulate_trade_hits_take():
     closes = [100, 101, 102, 109, 110]
     ret = simulate_trade_path(closes, entry_i=0, stop_pct=6, take_pct=8, max_days=10)
     assert ret == pytest.approx(8.0)
+    detail = simulate_trade_detail(closes, entry_i=0, stop_pct=6, take_pct=8, max_days=10)
+    assert detail["exit"] == "take"
+    assert detail["days"] == 3
+    assert detail["return_pct"] == pytest.approx(8.0)
 
 
 def test_simulate_trade_hits_stop():
     closes = [100, 99, 93, 90]
     ret = simulate_trade_path(closes, entry_i=0, stop_pct=6, take_pct=8, max_days=10)
     assert ret == pytest.approx(-6.0)
+    detail = simulate_trade_detail(closes, entry_i=0, stop_pct=6, take_pct=8, max_days=10)
+    assert detail["exit"] == "stop"
+    assert detail["days"] == 2
 
 
 def test_backtest_expectancy_has_samples():
@@ -88,6 +96,12 @@ def test_backtest_expectancy_has_samples():
     assert exp["sample_size"] >= 1
     assert "expectancy_pct" in exp
     assert "win_rate_pct" in exp
+    assert "up_prob_pct" in exp
+    assert "hit_take_prob_pct" in exp
+    assert "median_days_to_take" in exp
+    assert "likely_within_days" in exp
+    assert exp["horizon_days"] == 10
+    assert exp["up_prob_pct"] == exp["win_rate_pct"]
 
 
 def test_beginner_explain_is_plain_korean():
@@ -101,7 +115,16 @@ def test_beginner_explain_is_plain_korean():
             "is_flat_setup": True,
             "is_breakout": False,
             "action": "관망",
-            "expectancy": {"sample_size": 12, "win_rate_pct": 55, "expectancy_pct": 1.2},
+            "expectancy": {
+                "sample_size": 12,
+                "win_rate_pct": 55,
+                "up_prob_pct": 55,
+                "expectancy_pct": 1.2,
+                "hit_take_prob_pct": 40,
+                "median_days_to_take": 4,
+                "likely_within_days": 4,
+                "horizon_days": 10,
+            },
             "risk": {"stop_pct": 6, "take1_pct": 8},
         },
         "중립",
@@ -109,3 +132,5 @@ def test_beginner_explain_is_plain_korean():
     assert "큰손" in text["summary"]
     assert "초보 가이드" in text["guide"]
     assert "미래 보장은 아니에요" in text["backtest"]
+    assert "상승 확률" in text["backtest"]
+    assert "거래일" in text["backtest"]

@@ -121,8 +121,10 @@ else:
             st.caption(p.get("beginner_summary") or p.get("pick_why") or "")
             st.write(
                 f"돌파: {'O' if p.get('is_breakout') else 'X'} · "
-                f"기대수익 {float(exp.get('expectancy_pct', 0)):+.1f}% "
-                f"(승률 {exp.get('win_rate_pct', 0)}% / 표본 {exp.get('sample_size', 0)})"
+                f"상승확률 {exp.get('up_prob_pct', exp.get('win_rate_pct', 0))}% · "
+                f"약 {exp.get('likely_within_days', 0) or '-'}거래일 · "
+                f"기대 {float(exp.get('expectancy_pct', 0)):+.1f}% "
+                f"(표본 {exp.get('sample_size', 0)})"
             )
             risk = p.get("risk") or {}
             stop = risk.get("stop_price") or 0
@@ -154,6 +156,9 @@ else:
                 "익절%": risk.get("take1_pct", 8),
                 "초보 한줄": p.get("beginner_summary", ""),
                 "돌파": "O" if p.get("is_breakout") else "",
+                "상승확률%": exp.get("up_prob_pct", exp.get("win_rate_pct", 0)),
+                "예상일수": exp.get("likely_within_days", 0),
+                "익절도달%": exp.get("hit_take_prob_pct", 0),
                 "기대수익%": exp.get("expectancy_pct", 0),
                 "승률%": exp.get("win_rate_pct", 0),
                 "추천점수": p.get("pick_score", 0),
@@ -229,21 +234,89 @@ m5.metric("기대수익%", exp.get("expectancy_pct", 0))
 
 st.markdown(
     f"**액션:** {selected.get('action')} — {selected.get('reason')}  \n"
-    f"**과거 유사셋업:** 승률 {exp.get('win_rate_pct', 0)}% · "
+    f"**과거 유사셋업:** 상승확률 {exp.get('up_prob_pct', exp.get('win_rate_pct', 0))}% · "
+    f"1차익절 도달 {exp.get('hit_take_prob_pct', 0)}% · "
+    f"오른 경우 중간 약 {exp.get('likely_within_days', 0)}거래일 "
+    f"(최대 {exp.get('horizon_days', 10)}거래일) · "
     f"평균익 {exp.get('avg_win_pct', 0)}% · 평균손 {exp.get('avg_loss_pct', 0)}% · "
     f"표본 {exp.get('sample_size', 0)}  \n"
-    f"**+5% 확률(참고):** {prob.get('prob_target_pct', 0)}% (표본 {prob.get('sample_size', 0)})  \n"
+    f"**+5% 확률(단순 전방수익률 참고):** {prob.get('prob_target_pct', 0)}% (표본 {prob.get('sample_size', 0)})  \n"
     f"**리스크 가이드:** 손절 {risk.get('stop_price')} / 1차익절 {risk.get('take1_price')} / "
     f"2차익절 {risk.get('take2_price')} / 시간손절 {risk.get('time_stop_days')}일 / "
     f"계좌리스크 {risk.get('account_risk_pct')}%"
 )
 
 if analysis.get("dates"):
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.6, 0.4], vertical_spacing=0.08)
-    fig.add_trace(go.Scatter(x=analysis["dates"], y=analysis["closes"], name="종가"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=analysis["dates"], y=analysis["cum_smart"], name="누적 큰손"), row=2, col=1)
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.65, 0.35], vertical_spacing=0.08)
+    fig.add_trace(go.Scatter(x=analysis["dates"], y=analysis["closes"], name="종가", line=dict(color="#4aa3ff", width=2)), row=1, col=1)
+    # 손절/익절/현재가 수평선
+    x0, x1 = analysis["dates"][0], analysis["dates"][-1]
+    entry = float(selected.get("latest_close") or 0)
+    shapes = []
+    annotations = []
+    levels = [
+        ("손절", risk.get("stop_price"), "#d66a6a", "dash"),
+        ("현재가", entry, "#eef3f7", "solid"),
+        ("1차익절", risk.get("take1_price"), "#5ec28a", "dash"),
+        ("2차익절", risk.get("take2_price"), "#2bb0a6", "dot"),
+    ]
+    for label, y, color, dash in levels:
+        if not y:
+            continue
+        yv = float(y)
+        shapes.append(
+            dict(
+                type="line",
+                xref="x",
+                yref="y",
+                x0=x0,
+                x1=x1,
+                y0=yv,
+                y1=yv,
+                line=dict(color=color, width=1.5, dash=dash),
+            )
+        )
+        annotations.append(
+            dict(
+                xref="paper",
+                yref="y",
+                x=1.01,
+                y=yv,
+                text=f"{label} {yv:,.0f}",
+                showarrow=False,
+                font=dict(size=11, color=color),
+                xanchor="left",
+            )
+        )
+    if selected.get("breakout", {}).get("lookback_high"):
+        bh = float(selected["breakout"]["lookback_high"])
+        shapes.append(
+            dict(
+                type="line",
+                xref="x",
+                yref="y",
+                x0=x0,
+                x1=x1,
+                y0=bh,
+                y1=bh,
+                line=dict(color="#e0a45a", width=1, dash="dashdot"),
+            )
+        )
+        annotations.append(
+            dict(
+                xref="paper",
+                yref="y",
+                x=1.01,
+                y=bh,
+                text=f"돌파기준 {bh:,.0f}",
+                showarrow=False,
+                font=dict(size=11, color="#e0a45a"),
+                xanchor="left",
+            )
+        )
+    fig.add_trace(go.Scatter(x=analysis["dates"], y=analysis["cum_smart"], name="누적 큰손", line=dict(color="#2bb0a6")), row=2, col=1)
     fig.add_trace(
-        go.Scatter(x=analysis["dates"], y=analysis["cum_foreign"], name="누적 외인", line=dict(dash="dot")),
+        go.Scatter(x=analysis["dates"], y=analysis["cum_foreign"], name="누적 외인", line=dict(dash="dot", color="#93a4b3")),
         row=2,
         col=1,
     )
@@ -252,12 +325,19 @@ if analysis.get("dates"):
             x=analysis["dates"],
             y=analysis["cum_institution"],
             name="누적 기관",
-            line=dict(dash="dash"),
+            line=dict(dash="dash", color="#e0a45a"),
         ),
         row=2,
         col=1,
     )
-    fig.update_layout(height=560, margin=dict(l=10, r=10, t=30, b=10), legend=dict(orientation="h"))
+    fig.update_layout(
+        height=620,
+        margin=dict(l=10, r=110, t=30, b=10),
+        legend=dict(orientation="h"),
+        shapes=shapes,
+        annotations=annotations,
+    )
+    st.caption("차트 가로선: 손절(빨강) · 현재가(흰) · 1차익절(연녹) · 2차익절(청녹) · 돌파기준(주황)")
     st.plotly_chart(fig, use_container_width=True)
 
 if result["errors"]:
