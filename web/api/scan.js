@@ -59,9 +59,16 @@ async function buildSnapshot(item, lookbackDays, quote) {
   const flow = alignFlow(ohlcv, flowRaw);
   const score = scoreMoneyInPriceFlat(ohlcv, flow, lookbackDays);
   const breakout = detectBreakout(ohlcv, lookbackDays);
-  const expectancy = backtestSetupExpectancy(ohlcv, flow, lookbackDays);
   const latest = quote?.price || (ohlcv.length ? ohlcv[ohlcv.length - 1].close : 0);
   const risk = riskPlan(latest, Number(score.score || 0));
+  const expectancy = backtestSetupExpectancy(
+    ohlcv,
+    flow,
+    lookbackDays,
+    Number(risk.stop_pct || 6),
+    Number(risk.take1_pct || 8),
+    Number(risk.time_stop_days || 10),
+  );
   const chartSlice = ohlcv.slice(-60);
   return {
     ticker: item.ticker,

@@ -121,8 +121,10 @@ else:
             st.caption(p.get("beginner_summary") or p.get("pick_why") or "")
             st.write(
                 f"돌파: {'O' if p.get('is_breakout') else 'X'} · "
-                f"기대수익 {float(exp.get('expectancy_pct', 0)):+.1f}% "
-                f"(승률 {exp.get('win_rate_pct', 0)}% / 표본 {exp.get('sample_size', 0)})"
+                f"상승확률 {exp.get('up_prob_pct', exp.get('win_rate_pct', 0))}% · "
+                f"약 {exp.get('likely_within_days', 0) or '-'}거래일 · "
+                f"기대 {float(exp.get('expectancy_pct', 0)):+.1f}% "
+                f"(표본 {exp.get('sample_size', 0)})"
             )
             risk = p.get("risk") or {}
             stop = risk.get("stop_price") or 0
@@ -154,6 +156,9 @@ else:
                 "익절%": risk.get("take1_pct", 8),
                 "초보 한줄": p.get("beginner_summary", ""),
                 "돌파": "O" if p.get("is_breakout") else "",
+                "상승확률%": exp.get("up_prob_pct", exp.get("win_rate_pct", 0)),
+                "예상일수": exp.get("likely_within_days", 0),
+                "익절도달%": exp.get("hit_take_prob_pct", 0),
                 "기대수익%": exp.get("expectancy_pct", 0),
                 "승률%": exp.get("win_rate_pct", 0),
                 "추천점수": p.get("pick_score", 0),
@@ -229,10 +234,13 @@ m5.metric("기대수익%", exp.get("expectancy_pct", 0))
 
 st.markdown(
     f"**액션:** {selected.get('action')} — {selected.get('reason')}  \n"
-    f"**과거 유사셋업:** 승률 {exp.get('win_rate_pct', 0)}% · "
+    f"**과거 유사셋업:** 상승확률 {exp.get('up_prob_pct', exp.get('win_rate_pct', 0))}% · "
+    f"1차익절 도달 {exp.get('hit_take_prob_pct', 0)}% · "
+    f"오른 경우 중간 약 {exp.get('likely_within_days', 0)}거래일 "
+    f"(최대 {exp.get('horizon_days', 10)}거래일) · "
     f"평균익 {exp.get('avg_win_pct', 0)}% · 평균손 {exp.get('avg_loss_pct', 0)}% · "
     f"표본 {exp.get('sample_size', 0)}  \n"
-    f"**+5% 확률(참고):** {prob.get('prob_target_pct', 0)}% (표본 {prob.get('sample_size', 0)})  \n"
+    f"**+5% 확률(단순 전방수익률 참고):** {prob.get('prob_target_pct', 0)}% (표본 {prob.get('sample_size', 0)})  \n"
     f"**리스크 가이드:** 손절 {risk.get('stop_price')} / 1차익절 {risk.get('take1_price')} / "
     f"2차익절 {risk.get('take2_price')} / 시간손절 {risk.get('time_stop_days')}일 / "
     f"계좌리스크 {risk.get('account_risk_pct')}%"

@@ -21,6 +21,7 @@ export function detectBreakout(ohlcv, lookback = 20, volumeMult = 1.2, nearPct =
     breakout_level: lookbackHigh,
     volume_ok: volumeOk,
     distance_pct: Math.round(distancePct * 100) / 100,
+    lookback_high: lookbackHigh,
   };
 }
 
@@ -37,49 +38,86 @@ function isSetupAt(ohlcv, flow, endIdx, lookback) {
   return smart >= 1e8 && chg <= 8;
 }
 
-export function simulateTradePath(closes, entryI, stopPct = 6, takePct = 8, maxDays = 10) {
-  if (entryI < 0 || entryI >= closes.length - 1) return 0;
+export function simulateTradeDetail(closes, entryI, stopPct = 6, takePct = 8, maxDays = 10) {
+  const empty = { return_pct: 0, days: 0, exit: "none" };
+  if (entryI < 0 || entryI >= closes.length - 1) return empty;
   const entry = closes[entryI];
-  if (!entry) return 0;
+  if (!entry) return empty;
   const stop = entry * (1 - stopPct / 100);
   const take = entry * (1 + takePct / 100);
   const end = Math.min(closes.length - 1, entryI + maxDays);
   for (let j = entryI + 1; j <= end; j += 1) {
     const px = closes[j];
-    if (px <= stop) return ((stop / entry) - 1) * 100;
-    if (px >= take) return ((take / entry) - 1) * 100;
+    const days = j - entryI;
+    if (px <= stop) return { return_pct: ((stop / entry) - 1) * 100, days, exit: "stop" };
+    if (px >= take) return { return_pct: ((take / entry) - 1) * 100, days, exit: "take" };
   }
-  return ((closes[end] / entry) - 1) * 100;
+  const days = end - entryI;
+  return { return_pct: ((closes[end] / entry) - 1) * 100, days, exit: "time" };
 }
 
-export function backtestSetupExpectancy(ohlcv, flow, lookback = 20) {
+export function simulateTradePath(closes, entryI, stopPct = 6, takePct = 8, maxDays = 10) {
+  return simulateTradeDetail(closes, entryI, stopPct, takePct, maxDays).return_pct;
+}
+
+function median(nums) {
+  if (!nums.length) return 0;
+  const sorted = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2) return sorted[mid];
+  return (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+export function backtestSetupExpectancy(ohlcv, flow, lookback = 20, stopPct = 6, takePct = 8, maxDays = 10) {
   const empty = {
     sample_size: 0,
     win_rate_pct: 0,
+    up_prob_pct: 0,
+    hit_take_prob_pct: 0,
     avg_win_pct: 0,
     avg_loss_pct: 0,
     expectancy_pct: 0,
+    median_days_to_take: 0,
+    median_days_when_up: 0,
+    likely_within_days: 0,
+    horizon_days: maxDays,
   };
   if (!ohlcv || ohlcv.length < lookback + 15) return empty;
   const closes = ohlcv.map((r) => r.close);
-  const rets = [];
+  const details = [];
   let lastSetup = -lookback;
-  for (let i = lookback; i < closes.length - 10; i += 1) {
+  for (let i = lookback; i < closes.length - maxDays; i += 1) {
     if (i - lastSetup < Math.floor(lookback / 2)) continue;
     if (!isSetupAt(ohlcv, flow, i, lookback)) continue;
-    rets.push(simulateTradePath(closes, i));
+    details.push(simulateTradeDetail(closes, i, stopPct, takePct, maxDays));
     lastSetup = i;
   }
-  if (!rets.length) return empty;
+  if (!details.length) return empty;
+  const rets = details.map((d) => d.return_pct);
   const wins = rets.filter((r) => r > 0);
   const losses = rets.filter((r) => r <= 0);
+  const takeHits = details.filter((d) => d.exit === "take");
+  const upTrades = details.filter((d) => d.return_pct > 0);
   const avg = rets.reduce((s, r) => s + r, 0) / rets.length;
+  const winRate = Math.round((wins.length / rets.length) * 1000) / 10;
+  const hitTake = Math.round((takeHits.length / details.length) * 1000) / 10;
+  const medianDaysToTake = takeHits.length ? Math.round(median(takeHits.map((d) => d.days))) : 0;
+  const medianDaysWhenUp = upTrades.length ? Math.round(median(upTrades.map((d) => d.days))) : 0;
+  let likelyWithin = maxDays;
+  if (hitTake >= 30 && medianDaysToTake > 0) likelyWithin = medianDaysToTake;
+  else if (medianDaysWhenUp > 0) likelyWithin = medianDaysWhenUp;
   return {
     sample_size: rets.length,
-    win_rate_pct: Math.round((wins.length / rets.length) * 1000) / 10,
+    win_rate_pct: winRate,
+    up_prob_pct: winRate,
+    hit_take_prob_pct: hitTake,
     avg_win_pct: wins.length ? Math.round((wins.reduce((s, r) => s + r, 0) / wins.length) * 100) / 100 : 0,
     avg_loss_pct: losses.length ? Math.round((losses.reduce((s, r) => s + r, 0) / losses.length) * 100) / 100 : 0,
     expectancy_pct: Math.round(avg * 100) / 100,
+    median_days_to_take: medianDaysToTake,
+    median_days_when_up: medianDaysWhenUp,
+    likely_within_days: likelyWithin,
+    horizon_days: maxDays,
   };
 }
 
@@ -90,6 +128,7 @@ export function beginnerExplain(row, regime = "중립") {
   const priceChg = Number(row.price_change_pct || 0);
   const action = row.action || "관심목록";
   const exp = row.expectancy || {};
+  const risk = row.risk || {};
   const moneyLine =
     smartEok > 0
       ? `최근 큰손(외국인·기관) 돈이 약 ${smartEok.toFixed(1)}억 들어왔어요.`
@@ -110,9 +149,18 @@ export function beginnerExplain(row, regime = "중립") {
     triggerLine = "돈은 들어오는데 가격이 아직 대기 중이에요. ‘돌파대기’로 고점 돌파를 노리면 됩니다.";
   }
   const samples = Number(exp.sample_size || 0);
+  const upProb = Number((exp.up_prob_pct ?? exp.win_rate_pct) || 0);
+  const hitTake = Number(exp.hit_take_prob_pct || 0);
+  const within = Number(exp.likely_within_days || 0);
+  const horizon = Number(exp.horizon_days || 10);
+  const takePct = risk.take1_pct || 8;
+  const daysLine =
+    within > 0
+      ? `오른 경우 중간값으로 약 ${within}거래일 안에 반응했어요(최대 ${horizon}거래일 규칙).`
+      : `보통 ${horizon}거래일 안에 손절/익절을 봅니다.`;
   const backtest =
     samples >= 5
-      ? `비슷한 상황이 과거에 ${samples}번 있었고, 승률 약 ${Number(exp.win_rate_pct || 0).toFixed(0)}%, 1회 평균 기대수익 약 ${Number(exp.expectancy_pct || 0) >= 0 ? "+" : ""}${Number(exp.expectancy_pct || 0).toFixed(1)}%예요. 미래 보장은 아니에요.`
+      ? `비슷한 상황이 과거에 ${samples}번 있었고, 상승 확률 약 ${upProb.toFixed(0)}%, 1차익절(+${takePct}%) 도달 확률 약 ${hitTake.toFixed(0)}%, 1회 평균 기대수익 약 ${Number(exp.expectancy_pct || 0) >= 0 ? "+" : ""}${Number(exp.expectancy_pct || 0).toFixed(1)}%예요. ${daysLine} 미래 보장은 아니에요.`
       : "비슷한 과거 사례가 아직 적어, 숫자로 확정하긴 어려워요.";
   const regimeLine = {
     방어: "지금은 시장이 약한 편이라, 사더라도 비중을 작게 잡는 게 좋아요.",

@@ -86,21 +86,35 @@ def simulate_trade_path(
     max_days: int = 10,
 ) -> float:
     """진입 다음날부터 손절/익절/시간손절 적용 후 수익률%."""
+    return float(simulate_trade_detail(closes, entry_i, stop_pct, take_pct, max_days)["return_pct"])
+
+
+def simulate_trade_detail(
+    closes: list[float],
+    entry_i: int,
+    stop_pct: float = 6.0,
+    take_pct: float = 8.0,
+    max_days: int = 10,
+) -> dict[str, float | int | str]:
+    """진입 다음날부터 손절/익절/시간손절 적용 상세 결과."""
+    empty = {"return_pct": 0.0, "days": 0, "exit": "none"}
     if entry_i < 0 or entry_i >= len(closes) - 1:
-        return 0.0
+        return empty
     entry = closes[entry_i]
     if not entry:
-        return 0.0
+        return empty
     stop = entry * (1 - stop_pct / 100)
     take = entry * (1 + take_pct / 100)
     end = min(len(closes) - 1, entry_i + max_days)
     for j in range(entry_i + 1, end + 1):
         px = closes[j]
+        days = j - entry_i
         if px <= stop:
-            return ((stop / entry) - 1.0) * 100.0
+            return {"return_pct": ((stop / entry) - 1.0) * 100.0, "days": days, "exit": "stop"}
         if px >= take:
-            return ((take / entry) - 1.0) * 100.0
-    return ((closes[end] / entry) - 1.0) * 100.0
+            return {"return_pct": ((take / entry) - 1.0) * 100.0, "days": days, "exit": "take"}
+    days = end - entry_i
+    return {"return_pct": ((closes[end] / entry) - 1.0) * 100.0, "days": days, "exit": "time"}
 
 
 def backtest_setup_expectancy(
@@ -113,46 +127,70 @@ def backtest_setup_expectancy(
     min_samples: int = 5,
 ) -> dict[str, float | int]:
     """유사 수급↑·가격정체 셋업의 과거 기대값(참고용)."""
-    empty = {
+    empty: dict[str, float | int] = {
         "sample_size": 0,
         "win_rate_pct": 0.0,
+        "up_prob_pct": 0.0,
+        "hit_take_prob_pct": 0.0,
         "avg_win_pct": 0.0,
         "avg_loss_pct": 0.0,
         "expectancy_pct": 0.0,
         "avg_return_pct": 0.0,
+        "median_days_to_take": 0,
+        "median_days_when_up": 0,
+        "likely_within_days": 0,
+        "horizon_days": int(max_days),
     }
     if ohlcv is None or ohlcv.empty or "종가" not in ohlcv.columns or len(ohlcv) < lookback + max_days + 5:
         return empty
 
     closes = ohlcv["종가"].astype(float).tolist()
-    rets: list[float] = []
+    details: list[dict[str, float | int | str]] = []
     last_setup = -lookback
     for i in range(lookback, len(closes) - max_days):
         if i - last_setup < lookback // 2:
             continue
         if not _is_setup_at(ohlcv, flow, i, lookback):
             continue
-        rets.append(simulate_trade_path(closes, i, stop_pct=stop_pct, take_pct=take_pct, max_days=max_days))
+        details.append(
+            simulate_trade_detail(closes, i, stop_pct=stop_pct, take_pct=take_pct, max_days=max_days)
+        )
         last_setup = i
 
-    if len(rets) < min_samples:
-        # 표본이 적으면 전체 forward로 완화 추정은 하지 않고 부족 표시
-        if not rets:
-            return empty
-    arr = np.asarray(rets, dtype=float)
-    wins = arr[arr > 0]
-    losses = arr[arr <= 0]
-    win_rate = float((arr > 0).mean() * 100) if len(arr) else 0.0
+    if not details:
+        return empty
+
+    rets = np.asarray([float(d["return_pct"]) for d in details], dtype=float)
+    wins = rets[rets > 0]
+    losses = rets[rets <= 0]
+    take_hits = [d for d in details if d["exit"] == "take"]
+    up_trades = [d for d in details if float(d["return_pct"]) > 0]
+    win_rate = float((rets > 0).mean() * 100) if len(rets) else 0.0
+    hit_take = (len(take_hits) / len(details) * 100.0) if details else 0.0
     avg_win = float(wins.mean()) if len(wins) else 0.0
     avg_loss = float(losses.mean()) if len(losses) else 0.0
-    expectancy = float(arr.mean()) if len(arr) else 0.0
+    expectancy = float(rets.mean()) if len(rets) else 0.0
+    median_days_to_take = int(round(float(np.median([int(d["days"]) for d in take_hits])))) if take_hits else 0
+    median_days_when_up = int(round(float(np.median([int(d["days"]) for d in up_trades])))) if up_trades else 0
+    if hit_take >= 30 and median_days_to_take > 0:
+        likely_within = median_days_to_take
+    elif median_days_when_up > 0:
+        likely_within = median_days_when_up
+    else:
+        likely_within = int(max_days)
     return {
-        "sample_size": int(len(arr)),
+        "sample_size": int(len(rets)),
         "win_rate_pct": round(win_rate, 1),
+        "up_prob_pct": round(win_rate, 1),
+        "hit_take_prob_pct": round(hit_take, 1),
         "avg_win_pct": round(avg_win, 2),
         "avg_loss_pct": round(avg_loss, 2),
         "expectancy_pct": round(expectancy, 2),
         "avg_return_pct": round(expectancy, 2),
+        "median_days_to_take": median_days_to_take,
+        "median_days_when_up": median_days_when_up,
+        "likely_within_days": likely_within,
+        "horizon_days": int(max_days),
     }
 
 
@@ -166,8 +204,11 @@ def beginner_explain(row: dict[str, Any], regime: str = "중립") -> dict[str, s
     breakout = bool(row.get("is_breakout"))
     exp = row.get("expectancy") or {}
     exp_pct = float(exp.get("expectancy_pct", 0) or 0)
-    win_rate = float(exp.get("win_rate_pct", 0) or 0)
+    win_rate = float(exp.get("up_prob_pct", exp.get("win_rate_pct", 0)) or 0)
     samples = int(exp.get("sample_size", 0) or 0)
+    hit_take = float(exp.get("hit_take_prob_pct", 0) or 0)
+    within = int(exp.get("likely_within_days", 0) or 0)
+    horizon = int(exp.get("horizon_days", 10) or 10)
 
     money_line = (
         f"최근 큰손(외국인·기관) 돈이 약 {smart_eok:.1f}억 들어왔어요."
@@ -194,10 +235,16 @@ def beginner_explain(row: dict[str, Any], regime: str = "중립") -> dict[str, s
         trigger_line = "지금은 조건이 약해서, 다른 상위 추천을 먼저 보는 게 좋아요."
 
     if samples >= 5:
+        days_line = (
+            f"오른 경우 중간값으로 약 {within}거래일 안에 반응했어요(최대 {horizon}거래일 규칙)."
+            if within > 0
+            else f"보통 {horizon}거래일 안에 손절/익절을 봅니다."
+        )
         backtest_line = (
             f"비슷한 상황이 과거에 {samples}번 있었고, "
             f"그때 규칙(손절 {row.get('risk', {}).get('stop_pct', 6)}% / 익절 {row.get('risk', {}).get('take1_pct', 8)}%)으로 보면 "
-            f"승률 약 {win_rate:.0f}%, 1회 평균 기대수익 약 {exp_pct:+.1f}%예요. "
+            f"상승 확률 약 {win_rate:.0f}%, 1차익절(+{row.get('risk', {}).get('take1_pct', 8)}%) 도달 확률 약 {hit_take:.0f}%, "
+            f"1회 평균 기대수익 약 {exp_pct:+.1f}%예요. {days_line} "
             "미래 보장은 아니에요."
         )
     else:

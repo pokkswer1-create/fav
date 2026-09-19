@@ -1,198 +1,459 @@
-<!doctype html><html lang="ko"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>테마 수급 종목 분석기</title><link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin /><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" /><style>:root { --bg0: #0f1419; --bg1: #182029; --ink: #eef3f7; --muted: #93a4b3; --line: rgba(238, 243, 247, 0.12); --accent: #2bb0a6; --warn: #e0a45a; --bad: #d66a6a; --good: #5ec28a; } * { box-sizing: border-box; } body { margin: 0; min-height: 100vh; font-family: "IBM Plex Sans KR", sans-serif; color: var(--ink); background: radial-gradient(1200px 600px at 10% -10%, rgba(43, 176, 166, 0.22), transparent 60%), radial-gradient(900px 500px at 100% 0%, rgba(224, 164, 90, 0.14), transparent 55%), linear-gradient(180deg, #10161d, #0c1116 40%, #0a0e12); } .wrap { max-width: 1120px; margin: 0 auto; padding: 28px 18px 64px; } h1 { margin: 0 0 8px; font-size: clamp(1.6rem, 3vw, 2.2rem); letter-spacing: -0.03em; } .cap { color: var(--muted); margin: 0 0 22px; line-height: 1.5; } .bar { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 22px; } .metric { background: rgba(24, 32, 41, 0.72); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; backdrop-filter: blur(8px); } .metric .k { color: var(--muted); font-size: 0.78rem; margin-bottom: 4px; } .metric .v { font-family: "JetBrains Mono", monospace; font-weight: 500; font-size: 1.05rem; } .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 18px; } button, select { font: inherit; border-radius: 10px; border: 1px solid var(--line); background: var(--bg1); color: var(--ink); padding: 10px 14px; } button.primary { background: linear-gradient(135deg, #2bb0a6, #1f8f87); border: none; font-weight: 600; cursor: pointer; } button.primary:disabled { opacity: 0.6; cursor: wait; } h2 { margin: 28px 0 12px; font-size: 1.2rem; } .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; } .card { background: rgba(24, 32, 41, 0.85); border: 1px solid var(--line); border-radius: 16px; padding: 14px; min-height: 170px; cursor: pointer; transition: border-color 0.15s ease, transform 0.15s ease; } .card:hover { border-color: rgba(43, 176, 166, 0.45); transform: translateY(-1px); } .card.active { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(43, 176, 166, 0.35); } .card .rank { color: var(--accent); font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; } .card h3 { margin: 0 0 8px; font-size: 1.05rem; } .price { font-family: "JetBrains Mono", monospace; margin-bottom: 8px; } .up { color: var(--bad); } .down { color: #5b8dd9; } .action { display: inline-block; font-size: 0.8rem; font-weight: 600; padding: 3px 8px; border-radius: 999px; margin-bottom: 8px; background: rgba(43, 176, 166, 0.16); color: var(--accent); } .action.warn { background: rgba(224, 164, 90, 0.16); color: var(--warn); } .action.bad { background: rgba(214, 106, 106, 0.16); color: var(--bad); } .why { color: var(--muted); font-size: 0.82rem; line-height: 1.45; } table { width: 100%; border-collapse: collapse; font-size: 0.86rem; background: rgba(24, 32, 41, 0.7); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; } th, td { padding: 10px 8px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; } th { color: var(--muted); font-weight: 500; background: rgba(0,0,0,0.18); } .status { color: var(--muted); font-size: 0.85rem; min-height: 1.2em; } .err { color: var(--bad); } .scroll { overflow-x: auto; } .help { background: rgba(43, 176, 166, 0.1); border: 1px solid rgba(43, 176, 166, 0.28); border-radius: 14px; padding: 12px 14px; color: var(--muted); font-size: 0.9rem; line-height: 1.55; margin-bottom: 18px; } .help strong { color: var(--accent); display: block; margin-bottom: 4px; } .chart-box { background: rgba(24, 32, 41, 0.85); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px 10px; } .chart-box canvas { width: 100% !important; max-height: 360px; } .legend-cap { color: var(--muted); font-size: 0.82rem; margin: 8px 0 0; line-height: 1.45; } @media (max-width: 800px) { .bar { grid-template-columns: repeat(2, minmax(0, 1fr)); } }</style><script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script></head><body><div class="wrap"><h1>테마 수급 종목 분석기</h1><p class="cap">초보자도 쉽게: 큰손 돈의흐름 · 가격이 아직 안 오른지 · 고점 돌파 · 과거 비슷한 경우의 평균 성적을 보여줍니다. 투자 권유가 아닙니다.</p><div class="help"><strong>읽는 법</strong>
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>테마 수급 종목 분석기</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg0: #0f1419;
+      --bg1: #182029;
+      --ink: #eef3f7;
+      --muted: #93a4b3;
+      --line: rgba(238, 243, 247, 0.12);
+      --accent: #2bb0a6;
+      --warn: #e0a45a;
+      --bad: #d66a6a;
+      --good: #5ec28a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "IBM Plex Sans KR", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(1200px 600px at 10% -10%, rgba(43, 176, 166, 0.22), transparent 60%),
+        radial-gradient(900px 500px at 100% 0%, rgba(224, 164, 90, 0.14), transparent 55%),
+        linear-gradient(180deg, #10161d, #0c1116 40%, #0a0e12);
+    }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 28px 18px 64px; }
+    h1 { margin: 0 0 8px; font-size: clamp(1.6rem, 3vw, 2.2rem); letter-spacing: -0.03em; }
+    .cap { color: var(--muted); margin: 0 0 22px; line-height: 1.5; }
+    .bar {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 22px;
+    }
+    .metric {
+      background: rgba(24, 32, 41, 0.72);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px 14px;
+      backdrop-filter: blur(8px);
+    }
+    .metric .k { color: var(--muted); font-size: 0.78rem; margin-bottom: 4px; }
+    .metric .v { font-family: "JetBrains Mono", monospace; font-weight: 500; font-size: 1.05rem; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 18px; }
+    button, select {
+      font: inherit;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: var(--bg1);
+      color: var(--ink);
+      padding: 10px 14px;
+    }
+    button.primary {
+      background: linear-gradient(135deg, #2bb0a6, #1f8f87);
+      border: none;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button.primary:disabled { opacity: 0.6; cursor: wait; }
+    h2 { margin: 28px 0 12px; font-size: 1.2rem; }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+    .card {
+      background: rgba(24, 32, 41, 0.85);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px;
+      min-height: 170px;
+      cursor: pointer;
+      transition: border-color 0.15s ease, transform 0.15s ease;
+    }
+    .card:hover { border-color: rgba(43, 176, 166, 0.45); transform: translateY(-1px); }
+    .card.active { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(43, 176, 166, 0.35); }
+    .card .rank { color: var(--accent); font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; }
+    .card h3 { margin: 0 0 8px; font-size: 1.05rem; }
+    .price { font-family: "JetBrains Mono", monospace; margin-bottom: 8px; }
+    .up { color: var(--bad); }
+    .down { color: #5b8dd9; }
+    .action {
+      display: inline-block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 999px;
+      margin-bottom: 8px;
+      background: rgba(43, 176, 166, 0.16);
+      color: var(--accent);
+    }
+    .action.warn { background: rgba(224, 164, 90, 0.16); color: var(--warn); }
+    .action.bad { background: rgba(214, 106, 106, 0.16); color: var(--bad); }
+    .why { color: var(--muted); font-size: 0.82rem; line-height: 1.45; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.86rem;
+      background: rgba(24, 32, 41, 0.7);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    th, td { padding: 10px 8px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+    th { color: var(--muted); font-weight: 500; background: rgba(0,0,0,0.18); }
+    .status { color: var(--muted); font-size: 0.85rem; min-height: 1.2em; }
+    .err { color: var(--bad); }
+    .scroll { overflow-x: auto; }
+    .help {
+      background: rgba(43, 176, 166, 0.1);
+      border: 1px solid rgba(43, 176, 166, 0.28);
+      border-radius: 14px;
+      padding: 12px 14px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.55;
+      margin-bottom: 18px;
+    }
+    .help strong { color: var(--accent); display: block; margin-bottom: 4px; }
+    .chart-box {
+      background: rgba(24, 32, 41, 0.85);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px 16px 10px;
+    }
+    .chart-box canvas { width: 100% !important; max-height: 360px; }
+    .legend-cap { color: var(--muted); font-size: 0.82rem; margin: 8px 0 0; line-height: 1.45; }
+    @media (max-width: 800px) {
+      .bar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <h1>테마 수급 종목 분석기</h1>
+    <p class="cap">초보자도 쉽게: 큰손 돈의흐름 · 가격이 아직 안 오른지 · 고점 돌파 · 과거 비슷한 경우의 평균 성적을 보여줍니다. 투자 권유가 아닙니다.</p>
+
+    <div class="help">
+      <strong>읽는 법</strong>
       매수관심=조건+돌파 /
       분할관심=상위+돌파근접(소액 분할) /
       돌파대기=조건 좋음→고점 돌파 순간 노리기 /
-      손절 −6% · 1차익절 +8% · 2차익절 +15% (참고)
-    </div><div class="row"><select id="theme"><option value="전체">전체 테마</option><option>HBM/반도체</option><option>2차전지</option><option>AI/로봇</option><option>바이오</option><option>자동차/자율주행</option><option>방산/우주</option><option>원전/전력</option><option>조선/해운</option><option>인터넷/플랫폼</option><option>엔터/미디어</option><option>금융/증권</option><option>건설/인프라</option><option>화장품/소비</option><option>석유화학</option><option>통신/IT</option><option>음식료</option><option>수소/신재생</option></select><button class="primary" id="scanBtn">스캔 실행</button><span class="status" id="status"></span></div><div class="bar" id="metrics"><div class="metric"><div class="k">시장 상태</div><div class="v" id="mRegime">-</div></div><div class="metric"><div class="k">코스피</div><div class="v" id="mKospi">-</div></div><div class="metric"><div class="k">코스피 등락(%)</div><div class="v" id="mChg">-</div></div><div class="metric"><div class="k">오늘 추천</div><div class="v" id="mPick">-</div></div><div class="metric"><div class="k">모드</div><div class="v" id="mMode">-</div></div></div><h2>오늘 데이터 기반 골라준 종목</h2><div class="cards" id="cards"></div><h2>가격 차트 · 손절/익절</h2><div class="chart-box"><div class="row" style="margin-bottom:10px"><select id="chartPick" aria-label="차트 종목"></select><span class="status" id="chartCap">카드를 고르면 손절·익절 선이 표시됩니다.</span></div><canvas id="priceChart" height="140"></canvas><p class="legend-cap">가로선: <span style="color:#d66a6a">손절</span> · <span style="color:#eef3f7">현재가</span> · <span style="color:#5ec28a">1차익절</span> · <span style="color:#2bb0a6">2차익절</span> · <span style="color:#e0a45a">돌파기준</span></p></div><h2>추천 상세</h2><div class="scroll"><table><thead><tr><th>순위</th><th>종목</th><th>테마</th><th>액션</th><th>현재가</th><th>손절가</th><th>1차익절</th><th>2차익절</th><th>큰손(억)</th><th>돌파/기대</th><th>초보 설명</th></tr></thead><tbody id="tbody"></tbody></table></div><h2>돈이 몰리는 테마</h2><div class="scroll"><table><thead><tr><th>테마</th><th>스마트머니(억)</th></tr></thead><tbody id="themes"></tbody></table></div></div><script>const fmt = (n) => Number(n || 0).toLocaleString("ko-KR");
-const eok = (n) => (Number(n || 0) / 1e8).toFixed(1);
-const actionClass = (a) => {
-if (a === "매수관심" || a === "분할관심") return "";
-if (a === "소액관심" || a === "돌파대기" || a === "관망" || a === "관심목록") return "warn";
-return "bad";
-};
-let latestPicks = [];
-let priceChart = null;
-let selectedTicker = null;
-function levelDataset(label, value, color, dash) {
-return {
-label,
-data: [],
-borderColor: color,
-borderWidth: label === "현재가" ? 2 : 1.5,
-borderDash: dash || [],
-pointRadius: 0,
-fill: false,
-tension: 0,
-_level: Number(value) || 0,
-};
-}
-function renderChart(pick) {
-const cap = document.getElementById("chartCap");
-const canvas = document.getElementById("priceChart");
-if (!pick || !pick.chart || !(pick.chart.dates || []).length) {
-if (priceChart) {
-priceChart.destroy();
-priceChart = null;
-}
-cap.textContent = "차트 데이터가 없습니다.";
-return;
-}
-const dates = pick.chart.dates;
-const closes = pick.chart.closes;
-const risk = pick.risk || {};
-const stop = risk.stop_price || pick.stop_price || 0;
-const take1 = risk.take1_price || pick.take1_price || 0;
-const take2 = risk.take2_price || pick.take2_price || 0;
-const entry = Number(pick.latest_close || 0);
-const breakHigh = Number(pick.breakout?.lookback_high || 0);
-const flat = (v) => dates.map(() => Number(v));
-const datasets = [
-{
-label: "종가",
-data: closes,
-borderColor: "#4aa3ff",
-backgroundColor: "rgba(74, 163, 255, 0.12)",
-borderWidth: 2,
-pointRadius: 0,
-fill: true,
-tension: 0.15,
-},
-{ ...levelDataset("손절", stop, "#d66a6a", [6, 4]), data: flat(stop) },
-{ ...levelDataset("현재가", entry, "#eef3f7", []), data: flat(entry) },
-{ ...levelDataset("1차익절", take1, "#5ec28a", [6, 4]), data: flat(take1) },
-{ ...levelDataset("2차익절", take2, "#2bb0a6", [2, 4]), data: flat(take2) },
-];
-if (breakHigh) {
-datasets.push({ ...levelDataset("돌파기준", breakHigh, "#e0a45a", [8, 3, 2, 3]), data: flat(breakHigh) });
-}
-if (priceChart) priceChart.destroy();
-priceChart = new Chart(canvas, {
-type: "line",
-data: { labels: dates, datasets },
-options: {
-responsive: true,
-maintainAspectRatio: false,
-interaction: { mode: "index", intersect: false },
-plugins: {
-legend: {
-labels: { color: "#93a4b3", boxWidth: 12, font: { size: 11 } },
-},
-tooltip: {
-callbacks: {
-label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.parsed.y)}원`,
-},
-},
-},
-scales: {
-x: {
-ticks: { color: "#93a4b3", maxTicksLimit: 8, maxRotation: 0 },
-grid: { color: "rgba(238,243,247,0.06)" },
-},
-y: {
-ticks: {
-color: "#93a4b3",
-callback: (v) => Number(v).toLocaleString("ko-KR"),
-},
-grid: { color: "rgba(238,243,247,0.08)" },
-},
-},
-},
-});
-cap.textContent = `${pick.name} (${pick.ticker}) · 최근 ${dates.length}일 · 손절 ${fmt(stop)} / 1차 ${fmt(take1)} / 2차 ${fmt(take2)}`;
-}
-function selectPick(ticker) {
-selectedTicker = ticker;
-const pick = latestPicks.find((p) => p.ticker === ticker) || latestPicks[0];
-if (!pick) return;
-selectedTicker = pick.ticker;
-document.querySelectorAll(".card").forEach((el) => {
-el.classList.toggle("active", el.dataset.ticker === selectedTicker);
-});
-const sel = document.getElementById("chartPick");
-if (sel.value !== selectedTicker) sel.value = selectedTicker;
-renderChart(pick);
-}
-function fillThemeSelect(themes) {
-const sel = document.getElementById("theme");
-const current = sel.value || "전체";
-const names = Array.isArray(themes) && themes.length ? themes : null;
-if (!names) return;
-sel.innerHTML = [`<option value="전체">전체 테마 (${names.length})</option>`]
-.concat(names.map((t) => `<option value="${t}">${t}</option>`))
-.join("");
-sel.value = names.includes(current) || current === "전체" ? current : "전체";
-}
-async function scan() {
-const btn = document.getElementById("scanBtn");
-const status = document.getElementById("status");
-const theme = document.getElementById("theme").value;
-btn.disabled = true;
-status.textContent = "실시간 데이터 수집/분석 중... (최대 1분)";
-status.className = "status";
-try {
-const res = await fetch(`/api/scan?theme=${encodeURIComponent(theme)}&top=5&lookback=20`);
-const data = await res.json();
-if (!res.ok) throw new Error(data.error || "스캔 실패");
-fillThemeSelect(data.themes);
-render(data);
-status.textContent = `스캔시각 ${data.scanned_at} · 테마 ${data.themes?.length || "-"}개 · 종목 ${data.universe_size || data.count || "-"} · ${data.regime?.market_status || ""}`;
-} catch (err) {
-status.textContent = String(err.message || err);
-status.className = "status err";
-} finally {
-btn.disabled = false;
-}
-}
-function render(data) {
-const r = data.regime || {};
-document.getElementById("mRegime").textContent = r.regime || "-";
-document.getElementById("mKospi").textContent = fmt(r.kospi_price);
-document.getElementById("mChg").textContent = r.kospi_change_pct ?? "-";
-document.getElementById("mPick").textContent = (data.picks || []).length;
-document.getElementById("mMode").textContent = data.mode || "live";
-latestPicks = data.picks || [];
-const cards = document.getElementById("cards");
-cards.innerHTML = latestPicks.map((p) => {
-const chg = Number(p.realtime_change_pct || 0);
-const cls = chg >= 0 ? "up" : "down";
-const exp = p.expectancy || {};
-const risk = p.risk || {};
-const stop = risk.stop_price || p.stop_price || 0;
-const take1 = risk.take1_price || p.take1_price || 0;
-const take2 = risk.take2_price || p.take2_price || 0;
-return `
-<div class="card" data-ticker="${p.ticker}" role="button" tabindex="0"><div class="rank">${p.pick_label || ""}</div><h3>${p.name}</h3><div class="price">${fmt(p.latest_close)} <span class="${cls}">${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%</span></div><div class="action ${actionClass(p.action)}">${p.action || "-"}</div><div class="why">${p.reason || ""}</div><div class="why" style="margin-top:8px"><strong style="color:#e0a45a">손절</strong> ${fmt(stop)} (−${risk.stop_pct || 6}%) · <strong style="color:#5ec28a">1차익절</strong> ${fmt(take1)} (+${risk.take1_pct || 8}%) · <strong style="color:#5ec28a">2차</strong> ${fmt(take2)}</div><div class="why" style="margin-top:8px">${p.beginner_summary || p.pick_why || ""}</div><div class="why" style="margin-top:6px">돌파 ${p.is_breakout ? "O" : "X"} · 기대수익 ${Number(exp.expectancy_pct || 0).toFixed(1)}%</div></div>`;
-}).join("") || "<p class='status'>추천 없음</p>";
-cards.querySelectorAll(".card").forEach((el) => {
-el.addEventListener("click", () => selectPick(el.dataset.ticker));
-el.addEventListener("keydown", (ev) => {
-if (ev.key === "Enter" || ev.key === " ") {
-ev.preventDefault();
-selectPick(el.dataset.ticker);
-}
-});
-});
-const sel = document.getElementById("chartPick");
-sel.innerHTML = latestPicks.map((p) =>
-`<option value="${p.ticker}">${p.pick_rank || ""}. ${p.name} (${p.ticker})</option>`
-).join("") || `<option value="">추천 없음</option>`;
-const keep = latestPicks.some((p) => p.ticker === selectedTicker)
-? selectedTicker
-: (latestPicks[0] && latestPicks[0].ticker);
-if (keep) selectPick(keep);
-else {
-document.getElementById("chartCap").textContent = "추천 종목이 없습니다.";
-if (priceChart) { priceChart.destroy(); priceChart = null; }
-}
-document.getElementById("tbody").innerHTML = latestPicks.map((p) => {
-const exp = p.expectancy || {};
-const risk = p.risk || {};
-return `
-<tr><td>${p.pick_rank}</td><td>${p.name} (${p.ticker})</td><td>${p.theme}</td><td>${p.action}</td><td>${fmt(p.latest_close)}</td><td>${fmt(risk.stop_price || p.stop_price)}</td><td>${fmt(risk.take1_price || p.take1_price)}</td><td>${fmt(risk.take2_price || p.take2_price)}</td><td>${eok(p.smart_money_net)}</td><td>${p.is_breakout ? "O" : ""} / ${Number(exp.expectancy_pct || 0).toFixed(1)}%</td><td>${p.beginner_summary || p.pick_why || ""}</td></tr>`;
-}).join("");
-document.getElementById("themes").innerHTML = (data.theme_top || []).map((t) => `
-<tr><td>${t.theme}</td><td>${eok(t.smart_money_net)}</td></tr>`).join("");
-}
-document.getElementById("scanBtn").addEventListener("click", scan);
-document.getElementById("chartPick").addEventListener("change", (e) => selectPick(e.target.value));
-scan();</script></body></html>
+      손절 −6% · 1차익절 +8% · 2차익절 +15% (참고) /
+      상승확률·예상일수는 과거 유사셋업 백테스트(최대 10거래일) 참고값이에요. 미래 보장은 아닙니다.
+    </div>
+
+    <div class="row">
+      <select id="theme">
+        <option value="전체">전체 테마</option>
+        <option>HBM/반도체</option>
+        <option>2차전지</option>
+        <option>AI/로봇</option>
+        <option>바이오</option>
+        <option>자동차/자율주행</option>
+        <option>방산/우주</option>
+        <option>원전/전력</option>
+        <option>조선/해운</option>
+        <option>인터넷/플랫폼</option>
+        <option>엔터/미디어</option>
+        <option>금융/증권</option>
+        <option>건설/인프라</option>
+        <option>화장품/소비</option>
+        <option>석유화학</option>
+        <option>통신/IT</option>
+        <option>음식료</option>
+        <option>수소/신재생</option>
+      </select>
+      <button class="primary" id="scanBtn">스캔 실행</button>
+      <span class="status" id="status"></span>
+    </div>
+
+    <div class="bar" id="metrics">
+      <div class="metric"><div class="k">시장 상태</div><div class="v" id="mRegime">-</div></div>
+      <div class="metric"><div class="k">코스피</div><div class="v" id="mKospi">-</div></div>
+      <div class="metric"><div class="k">코스피 등락(%)</div><div class="v" id="mChg">-</div></div>
+      <div class="metric"><div class="k">오늘 추천</div><div class="v" id="mPick">-</div></div>
+      <div class="metric"><div class="k">모드</div><div class="v" id="mMode">-</div></div>
+    </div>
+
+    <h2>오늘 데이터 기반 골라준 종목</h2>
+    <div class="cards" id="cards"></div>
+
+    <h2>가격 차트 · 손절/익절</h2>
+    <div class="chart-box">
+      <div class="row" style="margin-bottom:10px">
+        <select id="chartPick" aria-label="차트 종목"></select>
+        <span class="status" id="chartCap">카드를 고르면 손절·익절 선이 표시됩니다.</span>
+      </div>
+      <canvas id="priceChart" height="140"></canvas>
+      <p class="legend-cap">가로선: <span style="color:#d66a6a">손절</span> · <span style="color:#eef3f7">현재가</span> · <span style="color:#5ec28a">1차익절</span> · <span style="color:#2bb0a6">2차익절</span> · <span style="color:#e0a45a">돌파기준</span></p>
+    </div>
+
+    <h2>추천 상세</h2>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>순위</th><th>종목</th><th>테마</th><th>액션</th><th>현재가</th>
+            <th>손절가</th><th>1차익절</th><th>2차익절</th>
+            <th>큰손(억)</th><th>상승확률</th><th>예상일수</th><th>돌파/기대</th><th>초보 설명</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+
+    <h2>돈이 몰리는 테마</h2>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>테마</th><th>스마트머니(억)</th></tr></thead>
+        <tbody id="themes"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const fmt = (n) => Number(n || 0).toLocaleString("ko-KR");
+    const eok = (n) => (Number(n || 0) / 1e8).toFixed(1);
+    const actionClass = (a) => {
+      if (a === "매수관심" || a === "분할관심") return "";
+      if (a === "소액관심" || a === "돌파대기" || a === "관망" || a === "관심목록") return "warn";
+      return "bad";
+    };
+
+    let latestPicks = [];
+    let priceChart = null;
+    let selectedTicker = null;
+
+    function levelDataset(label, value, color, dash) {
+      return {
+        label,
+        data: [],
+        borderColor: color,
+        borderWidth: label === "현재가" ? 2 : 1.5,
+        borderDash: dash || [],
+        pointRadius: 0,
+        fill: false,
+        tension: 0,
+        _level: Number(value) || 0,
+      };
+    }
+
+    function renderChart(pick) {
+      const cap = document.getElementById("chartCap");
+      const canvas = document.getElementById("priceChart");
+      if (!pick || !pick.chart || !(pick.chart.dates || []).length) {
+        if (priceChart) {
+          priceChart.destroy();
+          priceChart = null;
+        }
+        cap.textContent = "차트 데이터가 없습니다.";
+        return;
+      }
+      const dates = pick.chart.dates;
+      const closes = pick.chart.closes;
+      const risk = pick.risk || {};
+      const stop = risk.stop_price || pick.stop_price || 0;
+      const take1 = risk.take1_price || pick.take1_price || 0;
+      const take2 = risk.take2_price || pick.take2_price || 0;
+      const entry = Number(pick.latest_close || 0);
+      const breakHigh = Number(pick.breakout?.lookback_high || 0);
+      const flat = (v) => dates.map(() => Number(v));
+
+      const datasets = [
+        {
+          label: "종가",
+          data: closes,
+          borderColor: "#4aa3ff",
+          backgroundColor: "rgba(74, 163, 255, 0.12)",
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: true,
+          tension: 0.15,
+        },
+        { ...levelDataset("손절", stop, "#d66a6a", [6, 4]), data: flat(stop) },
+        { ...levelDataset("현재가", entry, "#eef3f7", []), data: flat(entry) },
+        { ...levelDataset("1차익절", take1, "#5ec28a", [6, 4]), data: flat(take1) },
+        { ...levelDataset("2차익절", take2, "#2bb0a6", [2, 4]), data: flat(take2) },
+      ];
+      if (breakHigh) {
+        datasets.push({ ...levelDataset("돌파기준", breakHigh, "#e0a45a", [8, 3, 2, 3]), data: flat(breakHigh) });
+      }
+
+      if (priceChart) priceChart.destroy();
+      priceChart = new Chart(canvas, {
+        type: "line",
+        data: { labels: dates, datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: {
+              labels: { color: "#93a4b3", boxWidth: 12, font: { size: 11 } },
+            },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.parsed.y)}원`,
+              },
+            },
+          },
+          scales: {
+            x: {
+              ticks: { color: "#93a4b3", maxTicksLimit: 8, maxRotation: 0 },
+              grid: { color: "rgba(238,243,247,0.06)" },
+            },
+            y: {
+              ticks: {
+                color: "#93a4b3",
+                callback: (v) => Number(v).toLocaleString("ko-KR"),
+              },
+              grid: { color: "rgba(238,243,247,0.08)" },
+            },
+          },
+        },
+      });
+      cap.textContent = `${pick.name} (${pick.ticker}) · 최근 ${dates.length}일 · 손절 ${fmt(stop)} / 1차 ${fmt(take1)} / 2차 ${fmt(take2)}`;
+    }
+
+    function selectPick(ticker) {
+      selectedTicker = ticker;
+      const pick = latestPicks.find((p) => p.ticker === ticker) || latestPicks[0];
+      if (!pick) return;
+      selectedTicker = pick.ticker;
+      document.querySelectorAll(".card").forEach((el) => {
+        el.classList.toggle("active", el.dataset.ticker === selectedTicker);
+      });
+      const sel = document.getElementById("chartPick");
+      if (sel.value !== selectedTicker) sel.value = selectedTicker;
+      renderChart(pick);
+    }
+
+    function fillThemeSelect(themes) {
+      const sel = document.getElementById("theme");
+      const current = sel.value || "전체";
+      const names = Array.isArray(themes) && themes.length ? themes : null;
+      if (!names) return;
+      sel.innerHTML = [`<option value="전체">전체 테마 (${names.length})</option>`]
+        .concat(names.map((t) => `<option value="${t}">${t}</option>`))
+        .join("");
+      sel.value = names.includes(current) || current === "전체" ? current : "전체";
+    }
+
+    async function scan() {
+      const btn = document.getElementById("scanBtn");
+      const status = document.getElementById("status");
+      const theme = document.getElementById("theme").value;
+      btn.disabled = true;
+      status.textContent = "실시간 데이터 수집/분석 중... (최대 1분)";
+      status.className = "status";
+      try {
+        const res = await fetch(`/api/scan?theme=${encodeURIComponent(theme)}&top=5&lookback=20`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "스캔 실패");
+        fillThemeSelect(data.themes);
+        render(data);
+        status.textContent = `스캔시각 ${data.scanned_at} · 테마 ${data.themes?.length || "-"}개 · 종목 ${data.universe_size || data.count || "-"} · ${data.regime?.market_status || ""}`;
+      } catch (err) {
+        status.textContent = String(err.message || err);
+        status.className = "status err";
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function render(data) {
+      const r = data.regime || {};
+      document.getElementById("mRegime").textContent = r.regime || "-";
+      document.getElementById("mKospi").textContent = fmt(r.kospi_price);
+      document.getElementById("mChg").textContent = r.kospi_change_pct ?? "-";
+      document.getElementById("mPick").textContent = (data.picks || []).length;
+      document.getElementById("mMode").textContent = data.mode || "live";
+
+      latestPicks = data.picks || [];
+      const cards = document.getElementById("cards");
+      cards.innerHTML = latestPicks.map((p) => {
+        const chg = Number(p.realtime_change_pct || 0);
+        const cls = chg >= 0 ? "up" : "down";
+        const exp = p.expectancy || {};
+        const risk = p.risk || {};
+        const stop = risk.stop_price || p.stop_price || 0;
+        const take1 = risk.take1_price || p.take1_price || 0;
+        const take2 = risk.take2_price || p.take2_price || 0;
+        return `
+          <div class="card" data-ticker="${p.ticker}" role="button" tabindex="0">
+            <div class="rank">${p.pick_label || ""}</div>
+            <h3>${p.name}</h3>
+            <div class="price">${fmt(p.latest_close)} <span class="${cls}">${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%</span></div>
+            <div class="action ${actionClass(p.action)}">${p.action || "-"}</div>
+            <div class="why">${p.reason || ""}</div>
+            <div class="why" style="margin-top:8px"><strong style="color:#e0a45a">손절</strong> ${fmt(stop)} (−${risk.stop_pct || 6}%) · <strong style="color:#5ec28a">1차익절</strong> ${fmt(take1)} (+${risk.take1_pct || 8}%) · <strong style="color:#5ec28a">2차</strong> ${fmt(take2)}</div>
+            <div class="why" style="margin-top:8px">${p.beginner_summary || p.pick_why || ""}</div>
+            <div class="why" style="margin-top:6px">돌파 ${p.is_breakout ? "O" : "X"} · 상승확률 ${Number((exp.up_prob_pct ?? exp.win_rate_pct) || 0).toFixed(0)}% · 약 ${exp.likely_within_days || "-"}거래일 · 기대 ${Number(exp.expectancy_pct || 0).toFixed(1)}%</div>
+          </div>`;
+      }).join("") || "<p class='status'>추천 없음</p>";
+
+      cards.querySelectorAll(".card").forEach((el) => {
+        el.addEventListener("click", () => selectPick(el.dataset.ticker));
+        el.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter" || ev.key === " ") {
+            ev.preventDefault();
+            selectPick(el.dataset.ticker);
+          }
+        });
+      });
+
+      const sel = document.getElementById("chartPick");
+      sel.innerHTML = latestPicks.map((p) =>
+        `<option value="${p.ticker}">${p.pick_rank || ""}. ${p.name} (${p.ticker})</option>`
+      ).join("") || `<option value="">추천 없음</option>`;
+
+      const keep = latestPicks.some((p) => p.ticker === selectedTicker)
+        ? selectedTicker
+        : (latestPicks[0] && latestPicks[0].ticker);
+      if (keep) selectPick(keep);
+      else {
+        document.getElementById("chartCap").textContent = "추천 종목이 없습니다.";
+        if (priceChart) { priceChart.destroy(); priceChart = null; }
+      }
+
+      document.getElementById("tbody").innerHTML = latestPicks.map((p) => {
+        const exp = p.expectancy || {};
+        const risk = p.risk || {};
+        return `
+        <tr>
+          <td>${p.pick_rank}</td>
+          <td>${p.name} (${p.ticker})</td>
+          <td>${p.theme}</td>
+          <td>${p.action}</td>
+          <td>${fmt(p.latest_close)}</td>
+          <td>${fmt(risk.stop_price || p.stop_price)}</td>
+          <td>${fmt(risk.take1_price || p.take1_price)}</td>
+          <td>${fmt(risk.take2_price || p.take2_price)}</td>
+          <td>${eok(p.smart_money_net)}</td>
+          <td>${Number((exp.up_prob_pct ?? exp.win_rate_pct) || 0).toFixed(0)}%</td>
+          <td>${exp.likely_within_days || "-"}일</td>
+          <td>${p.is_breakout ? "O" : ""} / ${Number(exp.expectancy_pct || 0).toFixed(1)}%</td>
+          <td>${p.beginner_summary || p.pick_why || ""}</td>
+        </tr>`;
+      }).join("");
+
+      document.getElementById("themes").innerHTML = (data.theme_top || []).map((t) => `
+        <tr><td>${t.theme}</td><td>${eok(t.smart_money_net)}</td></tr>`).join("");
+    }
+
+    document.getElementById("scanBtn").addEventListener("click", scan);
+    document.getElementById("chartPick").addEventListener("change", (e) => selectPick(e.target.value));
+    scan();
+  </script>
+</body>
+</html>

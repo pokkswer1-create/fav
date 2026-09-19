@@ -148,7 +148,8 @@
       매수관심=조건+돌파 /
       분할관심=상위+돌파근접(소액 분할) /
       돌파대기=조건 좋음→고점 돌파 순간 노리기 /
-      손절 −6% · 1차익절 +8% · 2차익절 +15% (참고)
+      손절 −6% · 1차익절 +8% · 2차익절 +15% (참고) /
+      상승확률·예상일수는 과거 유사셋업 백테스트(최대 10거래일) 참고값이에요. 미래 보장은 아닙니다.
     </div>
 
     <div class="row">
@@ -204,7 +205,7 @@
           <tr>
             <th>순위</th><th>종목</th><th>테마</th><th>액션</th><th>현재가</th>
             <th>손절가</th><th>1차익절</th><th>2차익절</th>
-            <th>큰손(억)</th><th>돌파/기대</th><th>초보 설명</th>
+            <th>큰손(억)</th><th>상승확률</th><th>예상일수</th><th>돌파/기대</th><th>초보 설명</th>
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
@@ -397,7 +398,7 @@
             <div class="why">${p.reason || ""}</div>
             <div class="why" style="margin-top:8px"><strong style="color:#e0a45a">손절</strong> ${fmt(stop)} (−${risk.stop_pct || 6}%) · <strong style="color:#5ec28a">1차익절</strong> ${fmt(take1)} (+${risk.take1_pct || 8}%) · <strong style="color:#5ec28a">2차</strong> ${fmt(take2)}</div>
             <div class="why" style="margin-top:8px">${p.beginner_summary || p.pick_why || ""}</div>
-            <div class="why" style="margin-top:6px">돌파 ${p.is_breakout ? "O" : "X"} · 기대수익 ${Number(exp.expectancy_pct || 0).toFixed(1)}%</div>
+            <div class="why" style="margin-top:6px">돌파 ${p.is_breakout ? "O" : "X"} · 상승확률 ${Number((exp.up_prob_pct ?? exp.win_rate_pct) || 0).toFixed(0)}% · 약 ${exp.likely_within_days || "-"}거래일 · 기대 ${Number(exp.expectancy_pct || 0).toFixed(1)}%</div>
           </div>`;
       }).join("") || "<p class='status'>추천 없음</p>";
 
@@ -439,6 +440,8 @@
           <td>${fmt(risk.take1_price || p.take1_price)}</td>
           <td>${fmt(risk.take2_price || p.take2_price)}</td>
           <td>${eok(p.smart_money_net)}</td>
+          <td>${Number((exp.up_prob_pct ?? exp.win_rate_pct) || 0).toFixed(0)}%</td>
+          <td>${exp.likely_within_days || "-"}일</td>
           <td>${p.is_breakout ? "O" : ""} / ${Number(exp.expectancy_pct || 0).toFixed(1)}%</td>
           <td>${p.beginner_summary || p.pick_why || ""}</td>
         </tr>`;
