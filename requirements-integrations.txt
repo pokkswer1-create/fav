@@ -1,0 +1,2 @@
+# Optional Python deps for external integrations
+pydatavolley>=0.1.0

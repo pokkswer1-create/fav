@@ -225,3 +225,90 @@ export async function restoreLibraryFromIdb(): Promise<boolean> {
   }
   return false;
 }
+
+const PLAYER_TRACKS_KEY = "fav.scout.player-tracks.v1";
+
+export interface StoredPlayerTracks {
+  /** Catalog match id, or `upload:<name>` for uploaded files. */
+  sourceKey: string;
+  marks: Array<{
+    id: string;
+    timeSec: number;
+    playerNumber: number;
+    playerName: string;
+    playerId?: string;
+    xNorm?: number;
+    yNorm?: number;
+    note?: string;
+  }>;
+  /** Court P1–P6 lineup (nullable slots serialized as array length 6). */
+  lineup?: Array<{
+    slot: 1 | 2 | 3 | 4 | 5 | 6;
+    playerNumber: number;
+    playerName: string;
+    playerId?: string;
+    xNorm?: number;
+    yNorm?: number;
+  } | null>;
+  updatedAt: string;
+}
+
+export interface PlayerTrackState {
+  marks: StoredPlayerTracks["marks"];
+  lineup: NonNullable<StoredPlayerTracks["lineup"]>;
+}
+
+function readPlayerTracksMap(): Record<string, StoredPlayerTracks> {
+  return readJson<Record<string, StoredPlayerTracks>>(PLAYER_TRACKS_KEY, {});
+}
+
+export function loadPlayerTrackState(sourceKey: string): PlayerTrackState {
+  const key = sourceKey.trim();
+  const emptyLineup = [null, null, null, null, null, null] as PlayerTrackState["lineup"];
+  if (!key) return { marks: [], lineup: emptyLineup };
+  const hit = readPlayerTracksMap()[key];
+  const lineup =
+    hit?.lineup && hit.lineup.length === 6 ? hit.lineup : emptyLineup;
+  return { marks: hit?.marks ?? [], lineup };
+}
+
+/** @deprecated prefer loadPlayerTrackState */
+export function loadPlayerTracks(sourceKey: string): StoredPlayerTracks["marks"] {
+  return loadPlayerTrackState(sourceKey).marks;
+}
+
+export function savePlayerTrackState(
+  sourceKey: string,
+  state: { marks: StoredPlayerTracks["marks"]; lineup?: PlayerTrackState["lineup"] },
+): void {
+  const key = sourceKey.trim();
+  if (!key) return;
+  const map = readPlayerTracksMap();
+  const hasMarks = state.marks.length > 0;
+  const hasLineup = Boolean(state.lineup?.some((s) => s != null));
+  if (!hasMarks && !hasLineup) {
+    delete map[key];
+  } else {
+    map[key] = {
+      sourceKey: key,
+      marks: state.marks,
+      lineup: state.lineup,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+  writeJson(PLAYER_TRACKS_KEY, map);
+}
+
+export function savePlayerTracks(sourceKey: string, marks: StoredPlayerTracks["marks"]): void {
+  const prev = loadPlayerTrackState(sourceKey);
+  savePlayerTrackState(sourceKey, { marks, lineup: prev.lineup });
+}
+
+export function playerTrackSourceKey(opts: {
+  matchVideoId?: string | null;
+  fileName?: string | null;
+}): string {
+  if (opts.fileName?.trim()) return `upload:${opts.fileName.trim()}`;
+  return String(opts.matchVideoId ?? "").trim();
+}
+

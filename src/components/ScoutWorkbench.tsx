@@ -43,6 +43,7 @@ import {
   nextClockAfterSeek,
   shouldAutoFollowPlayback,
 } from "@/lib/video-clock";
+import { apiFetch } from "@/lib/api-client";
 import type { PlayerStats, Position } from "@/lib/types";
 import { WingLogo } from "./SiteHeader";
 import { HowToPanel, ExplainedButton } from "./UiGuide";
@@ -277,6 +278,42 @@ export function ScoutWorkbench() {
     });
     downloadDvw(`${rosters.homeName}-scout`, text);
     setStatus("DVW 내보내기 완료");
+  }
+
+  async function importDvwFile(file: File) {
+    try {
+      setStatus("DVW import 중…");
+      const form = new FormData();
+      form.append("dvw", file);
+      const res = await apiFetch("/api/scout/dvw", { method: "POST", body: form });
+      const data = (await res.json()) as {
+        error?: string;
+        session?: ScoutSession;
+        import?: { actionCount?: number; pointCount?: number; engine?: string; notes?: string[] };
+        pydatavolley?: { engine?: string; rows?: number; error?: string };
+      };
+      if (!res.ok) throw new Error(data.error ?? `import 실패 (${res.status})`);
+      if (!data.session) throw new Error("세션이 비어 있습니다.");
+      const next = {
+        ...data.session,
+        id: session.id,
+        matchId: session.matchId,
+      };
+      touch(next);
+      setRosters((r) => ({
+        ...r,
+        homeName: next.homeName || r.homeName,
+        awayName: next.awayName || r.awayName,
+      }));
+      const pyNote = data.pydatavolley?.engine
+        ? ` · py:${data.pydatavolley.engine}${data.pydatavolley.rows != null ? `(${data.pydatavolley.rows})` : ""}`
+        : "";
+      setStatus(
+        `DVW import OK · ${data.import?.engine ?? "parser"} · 액션 ${data.import?.actionCount ?? 0} · 포인트 ${data.import?.pointCount ?? 0}${pyNote}`,
+      );
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : "DVW import 실패");
+    }
   }
 
   function sendFilteredToEditor(skillOnly?: boolean) {
@@ -708,6 +745,18 @@ export function ScoutWorkbench() {
             <button type="button" className="btn ghost" onClick={exportDvw}>
               DVW 내보내기
             </button>
+            <label className="btn ghost file-btn">
+              DVW 가져오기
+              <input
+                type="file"
+                accept=".dvw,text/plain"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void importDvwFile(f);
+                  e.currentTarget.value = "";
+                }}
+              />
+            </label>
           </div>
           {(session.actions?.length ?? 0) > 0 ? (
             <ul className="scout-log code-log">
