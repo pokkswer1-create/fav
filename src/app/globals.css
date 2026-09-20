@@ -1083,10 +1083,40 @@ a {
   box-shadow: inset 0 0 0 1px rgba(255, 45, 149, 0.28);
 }
 
-.court-lineup-panel {
-  margin-bottom: 0.85rem;
-  padding-bottom: 0.85rem;
+.fivb-panel {
+  margin: 1rem 0 1.25rem;
+  padding: 0.85rem 0;
+  border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
+}
+
+.fivb-panel h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+}
+
+.fivb-panel label {
+  display: grid;
+  gap: 0.3rem;
+  color: var(--ink-dim);
+  font-size: 0.78rem;
+}
+
+.fivb-panel input {
+  border: 1px solid var(--line);
+  background: #06110c;
+  color: var(--ink);
+  padding: 0.45rem 0.55rem;
+  font: inherit;
+}
+
+.fivb-stats-pre {
+  max-height: 14rem;
+  overflow: auto;
+  font-size: 0.72rem;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 0.55rem;
+  border: 1px solid var(--line);
 }
 
 .court-lineup-head {
