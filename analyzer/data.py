@@ -10,7 +10,12 @@ import pandas as pd
 from analyzer.naver_live import (
     fetch_ohlcv_and_flow,
     fetch_realtime_index,
-    fetch_realtime_quotes,
+)
+from analyzer.providers.market import (
+    fetch_daily_prices_cascaded,
+    fetch_disclosures_cascaded,
+    fetch_quotes_cascaded,
+    provider_status,
 )
 from analyzer.rules import action_comment, risk_plan
 from analyzer.screener import (
@@ -79,7 +84,7 @@ def make_demo_flow(n: int = 140, seed: int = 1) -> pd.DataFrame:
 def fetch_ohlcv(ticker: str, start: str, end: str, demo: bool = False) -> pd.DataFrame:
     if demo:
         return make_demo_ohlcv(seed=sum(map(ord, ticker)) % 10_000)
-    ohlcv, _ = fetch_ohlcv_and_flow(ticker, days=160)
+    ohlcv, _source = fetch_daily_prices_cascaded(ticker, days=160)
     return ohlcv
 
 
@@ -89,6 +94,30 @@ def fetch_investor_flow(ticker: str, start: str, end: str, demo: bool = False) -
         return make_demo_flow(seed=sum(map(ord, ticker)) % 10_000)
     _, flow = fetch_ohlcv_and_flow(ticker, days=160)
     return flow
+
+
+def _ohlcv_and_flow_live(ticker: str, days: int = 160) -> tuple[pd.DataFrame, pd.DataFrame, str]:
+    ohlcv, source = fetch_daily_prices_cascaded(ticker, days=days)
+    try:
+        _, flow = fetch_ohlcv_and_flow(ticker, days=days)
+    except Exception:  # noqa: BLE001
+        flow = pd.DataFrame()
+    if ohlcv.empty and not flow.empty and "종가" in flow.columns:
+        ohlcv = pd.DataFrame(
+            {
+                "시가": flow["종가"],
+                "고가": flow["종가"],
+                "저가": flow["종가"],
+                "종가": flow["종가"],
+                "거래량": 0.0,
+                "거래대금": 0.0,
+            },
+            index=flow.index,
+        )
+        source = f"{source}+naver_flow" if source != "none" else "naver_flow"
+    if not flow.empty and not ohlcv.empty:
+        flow = flow.reindex(ohlcv.index).fillna(0.0)
+    return ohlcv, flow, source
 
 
 def fetch_market_regime(demo: bool = False) -> dict:
@@ -153,14 +182,14 @@ def build_stock_snapshot(
     demo: bool = False,
     regime: str = "중립",
     quote: dict | None = None,
+    disclosures: list[dict] | None = None,
 ) -> dict:
     if demo:
         ohlcv = make_demo_ohlcv(seed=sum(map(ord, ticker)) % 10_000)
         flow = make_demo_flow(seed=sum(map(ord, ticker)) % 10_000)
         source = "demo"
     else:
-        ohlcv, flow = fetch_ohlcv_and_flow(ticker, days=160)
-        source = "naver_live"
+        ohlcv, flow, source = _ohlcv_and_flow_live(ticker, days=160)
 
     score = score_money_in_price_flat(ohlcv, flow, ScoreConfig(lookback_days=lookback_days))
     three = analyze_period(ohlcv, flow, months=3)
@@ -180,6 +209,7 @@ def build_stock_snapshot(
         max_days=int(risk["time_stop_days"]),
         min_samples=1,
     )
+    disc = list(disclosures or [])
     row = {
         "ticker": ticker,
         "name": name,
@@ -200,6 +230,7 @@ def build_stock_snapshot(
         "expectancy": expectancy,
         "is_theme_leader": False,
         "data_source": source,
+        "disclosures": disc,
     }
     # normalize liquidity key for rules
     row["liquidity_ok"] = bool(row.get("liquidity_ok", False))
@@ -210,6 +241,7 @@ def build_stock_snapshot(
     row["beginner_summary"] = explain["summary"]
     row["beginner_backtest"] = explain["backtest"]
     row["beginner_guide"] = explain["guide"]
+    row["beginner_disclosure"] = explain.get("disclosure") or ""
     row["beginner_full"] = explain["full"]
     return row
 
@@ -234,11 +266,20 @@ def scan_market(
         seen.add(item["ticker"])
         unique_items.append(item)
     quotes: dict[str, dict] = {}
+    quote_source = "demo" if demo else "none"
+    disclosures: dict[str, list] = {}
+    disclosure_source = "none"
     if not demo:
         try:
-            quotes = fetch_realtime_quotes([x["ticker"] for x in unique_items])
+            quotes, quote_source = fetch_quotes_cascaded([x["ticker"] for x in unique_items])
         except Exception:  # noqa: BLE001
-            quotes = {}
+            quotes, quote_source = {}, "none"
+        try:
+            disclosures, disclosure_source = fetch_disclosures_cascaded(
+                [x["ticker"] for x in unique_items]
+            )
+        except Exception:  # noqa: BLE001
+            disclosures, disclosure_source = {}, "none"
 
     snap_by_ticker: dict[str, dict] = {}
     errors: list[dict] = []
@@ -252,6 +293,7 @@ def scan_market(
             demo=demo,
             regime=regime,
             quote=quotes.get(item["ticker"]),
+            disclosures=disclosures.get(item["ticker"]) or [],
         )
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
@@ -315,4 +357,7 @@ def scan_market(
         "themes": list_themes(),
         "scanned_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "mode": "demo" if demo else "live",
+        "providers": provider_status(),
+        "quote_source": quote_source,
+        "disclosure_source": disclosure_source,
     }

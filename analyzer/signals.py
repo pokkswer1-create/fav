@@ -256,6 +256,17 @@ def beginner_explain(row: dict[str, Any], regime: str = "중립") -> dict[str, s
         "중립": "시장은 보통이에요. 종목 조건만 잘 보면 됩니다.",
     }.get(regime, "시장 상태를 같이 보고 결정하세요.")
 
+    disclosures = row.get("disclosures") or []
+    disc_line = ""
+    if isinstance(disclosures, list) and disclosures:
+        top = disclosures[0] if isinstance(disclosures[0], dict) else {}
+        label = str(top.get("label") or "공시")
+        title = str(top.get("title") or top.get("fact") or "")
+        fact = str(top.get("fact") or "")
+        snippet = fact or title
+        if snippet:
+            disc_line = f"최근 공시({label}): {snippet[:80]}"
+
     action_guide = {
         "추격주의": f"초보 가이드: {name}은(는) 이미 올랐어요. 지금 따라 사지 말고, 조정을 기다리세요.",
         "매수관심": f"초보 가이드: {name}은(는) 관심 매수 후보예요. 손절 {int(row.get('risk', {}).get('stop_price') or 0):,}원 / 1차익절 {int(row.get('risk', {}).get('take1_price') or 0):,}원부터 정하세요.",
@@ -269,10 +280,15 @@ def beginner_explain(row: dict[str, Any], regime: str = "중립") -> dict[str, s
     }.get(action, f"초보 가이드: {name}은(는) 신중히 보세요.")
 
     summary = " ".join([money_line, price_line, theme_line, trigger_line])
+    parts = [summary, backtest_line, regime_line]
+    if disc_line:
+        parts.append(disc_line)
+    parts.append(action_guide)
     return {
         "summary": summary,
         "backtest": backtest_line,
         "regime": regime_line,
+        "disclosure": disc_line,
         "guide": action_guide,
-        "full": "\n".join([summary, backtest_line, regime_line, action_guide]),
+        "full": "\n".join(parts),
     }

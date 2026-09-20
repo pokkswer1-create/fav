@@ -1,10 +1,5 @@
 import { listThemes, stocksForTheme } from "../lib/themes.js";
-import {
-  fetchDailyPrices,
-  fetchInvestorTrend,
-  fetchRealtimeIndex,
-  fetchRealtimeQuotes,
-} from "../lib/naver.js";
+import { fetchInvestorTrend, fetchRealtimeIndex } from "../lib/naver.js";
 import {
   actionComment,
   marketRegime,
@@ -17,6 +12,12 @@ import {
   detectBreakout,
 } from "../lib/signals.js";
 import { riskPlan } from "../lib/risk.js";
+import {
+  fetchDailyPricesCascaded,
+  fetchDisclosuresCascaded,
+  fetchQuotesCascaded,
+  providerStatus,
+} from "../lib/providers/market.js";
 
 export const config = {
   maxDuration: 60,
@@ -50,11 +51,11 @@ async function mapPool(items, concurrency, worker) {
   return results;
 }
 
-async function buildSnapshot(item, lookbackDays, quote) {
+async function buildSnapshot(item, lookbackDays, quote, disclosures) {
   const days = Math.max(lookbackDays + 80, 120);
-  const [ohlcv, flowRaw] = await Promise.all([
-    fetchDailyPrices(item.ticker, days),
-    fetchInvestorTrend(item.ticker, Math.min(days, 80)),
+  const [{ rows: ohlcv, source }, flowRaw] = await Promise.all([
+    fetchDailyPricesCascaded(item.ticker, days),
+    fetchInvestorTrend(item.ticker, Math.min(days, 80)).catch(() => []),
   ]);
   const flow = alignFlow(ohlcv, flowRaw);
   const score = scoreMoneyInPriceFlat(ohlcv, flow, lookbackDays);
@@ -89,7 +90,8 @@ async function buildSnapshot(item, lookbackDays, quote) {
       dates: chartSlice.map((r) => r.date),
       closes: chartSlice.map((r) => r.close),
     },
-    data_source: "naver_live",
+    data_source: source,
+    disclosures: disclosures || [],
   };
 }
 
@@ -122,13 +124,22 @@ export default async function handler(req, res) {
       seenTickers.add(item.ticker);
       uniqueItems.push(item);
     }
-    const quotes = await fetchRealtimeQuotes(uniqueItems.map((u) => u.ticker));
+    const [{ quotes, source: quoteSource }, { disclosures, source: disclosureSource }] =
+      await Promise.all([
+        fetchQuotesCascaded(uniqueItems.map((u) => u.ticker)),
+        fetchDisclosuresCascaded(uniqueItems.map((u) => u.ticker)),
+      ]);
 
     const snapshots = (
       await mapPool(uniqueItems, 10, async (item) => {
         try {
-          return await buildSnapshot(item, lookback, quotes[item.ticker]);
-        } catch (err) {
+          return await buildSnapshot(
+            item,
+            lookback,
+            quotes[item.ticker],
+            disclosures[item.ticker] || [],
+          );
+        } catch {
           return null;
         }
       })
@@ -151,6 +162,7 @@ export default async function handler(req, res) {
         beginner_summary: explain.summary,
         beginner_backtest: explain.backtest,
         beginner_guide: explain.guide,
+        beginner_disclosure: explain.disclosure || "",
         beginner_full: explain.full,
       };
     });
@@ -179,6 +191,9 @@ export default async function handler(req, res) {
       mode: "live",
       count: raw.length,
       universe_size: uniqueItems.length,
+      providers: providerStatus(),
+      quote_source: quoteSource,
+      disclosure_source: disclosureSource,
     });
   } catch (err) {
     res.status(500).json({ error: String(err?.message || err) });

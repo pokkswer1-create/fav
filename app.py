@@ -67,6 +67,7 @@ for row in picks:
     item["beginner_summary"] = explain["summary"]
     item["beginner_backtest"] = explain["backtest"]
     item["beginner_guide"] = explain["guide"]
+    item["beginner_disclosure"] = explain.get("disclosure") or ""
     item["beginner_full"] = explain["full"]
     refreshed.append(item)
 picks = refreshed
@@ -82,7 +83,9 @@ c4.metric("오늘 추천", len(picks))
 c5.metric("모드", result.get("mode", "-"))
 st.caption(
     f"스캔시각 {result.get('scanned_at', '-')} · 데이터 {regime.get('data_source', '-')} · "
-    f"장상태 {regime.get('market_status', '-')}"
+    f"장상태 {regime.get('market_status', '-')} · "
+    f"시세 {result.get('quote_source', '-')} · 공시 {result.get('disclosure_source', '-')} · "
+    f"providers {result.get('providers', {})}"
 )
 
 with st.expander("초보자를 위한 읽는 법", expanded=True):

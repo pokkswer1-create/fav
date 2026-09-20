@@ -149,7 +149,8 @@
       분할관심=상위+돌파근접(소액 분할) /
       돌파대기=조건 좋음→고점 돌파 순간 노리기 /
       손절 −6% · 1차익절 +8% · 2차익절 +15% (참고) /
-      상승확률·예상일수는 과거 유사셋업 백테스트(최대 10거래일) 참고값이에요. 미래 보장은 아닙니다.
+      상승확률·예상일수는 과거 유사셋업 백테스트(최대 10거래일) 참고값이에요. 미래 보장은 아닙니다. /
+      최근공시는 aikstockdata·DART 참고(키 있으면 DART 보강).
     </div>
 
     <div class="row">
@@ -183,6 +184,7 @@
       <div class="metric"><div class="k">코스피 등락(%)</div><div class="v" id="mChg">-</div></div>
       <div class="metric"><div class="k">오늘 추천</div><div class="v" id="mPick">-</div></div>
       <div class="metric"><div class="k">모드</div><div class="v" id="mMode">-</div></div>
+      <div class="metric"><div class="k">데이터소스</div><div class="v" id="mProv">-</div></div>
     </div>
 
     <h2>오늘 데이터 기반 골라준 종목</h2>
@@ -378,6 +380,9 @@
       document.getElementById("mChg").textContent = r.kospi_change_pct ?? "-";
       document.getElementById("mPick").textContent = (data.picks || []).length;
       document.getElementById("mMode").textContent = data.mode || "live";
+      const prov = data.providers || {};
+      const on = ["naver", "aikstock", "kis", "dart", "krx"].filter((k) => prov[k]).join("+") || "naver";
+      document.getElementById("mProv").textContent = `${on} / q:${data.quote_source || "-"} / d:${data.disclosure_source || "-"}`;
 
       latestPicks = data.picks || [];
       const cards = document.getElementById("cards");
@@ -389,6 +394,10 @@
         const stop = risk.stop_price || p.stop_price || 0;
         const take1 = risk.take1_price || p.take1_price || 0;
         const take2 = risk.take2_price || p.take2_price || 0;
+        const disc = (p.disclosures && p.disclosures[0]) || null;
+        const discHtml = disc
+          ? `<div class="why" style="margin-top:6px">공시 · ${disc.label || "공시"}: ${(disc.fact || disc.title || "").slice(0, 70)}${disc.url ? ` <a href="${disc.url}" target="_blank" rel="noopener">보기</a>` : ""}</div>`
+          : "";
         return `
           <div class="card" data-ticker="${p.ticker}" role="button" tabindex="0">
             <div class="rank">${p.pick_label || ""}</div>
@@ -398,7 +407,8 @@
             <div class="why">${p.reason || ""}</div>
             <div class="why" style="margin-top:8px"><strong style="color:#e0a45a">손절</strong> ${fmt(stop)} (−${risk.stop_pct || 6}%) · <strong style="color:#5ec28a">1차익절</strong> ${fmt(take1)} (+${risk.take1_pct || 8}%) · <strong style="color:#5ec28a">2차</strong> ${fmt(take2)}</div>
             <div class="why" style="margin-top:8px">${p.beginner_summary || p.pick_why || ""}</div>
-            <div class="why" style="margin-top:6px">돌파 ${p.is_breakout ? "O" : "X"} · 상승확률 ${Number((exp.up_prob_pct ?? exp.win_rate_pct) || 0).toFixed(0)}% · 약 ${exp.likely_within_days || "-"}거래일 · 기대 ${Number(exp.expectancy_pct || 0).toFixed(1)}%</div>
+            <div class="why" style="margin-top:6px">돌파 ${p.is_breakout ? "O" : "X"} · 상승확률 ${Number((exp.up_prob_pct ?? exp.win_rate_pct) || 0).toFixed(0)}% · 약 ${exp.likely_within_days || "-"}거래일 · 기대 ${Number(exp.expectancy_pct || 0).toFixed(1)}% · src ${p.data_source || "-"}</div>
+            ${discHtml}
           </div>`;
       }).join("") || "<p class='status'>추천 없음</p>";
 

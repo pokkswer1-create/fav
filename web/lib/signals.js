@@ -167,6 +167,14 @@ export function beginnerExplain(row, regime = "중립") {
     공격: "시장이 강한 편이라, 조건이 맞으면 관심 가져볼 만해요.",
     중립: "시장은 보통이에요. 종목 조건만 잘 보면 됩니다.",
   }[regime] || "시장 상태를 같이 보고 결정하세요.";
+  const disclosures = row.disclosures || [];
+  let discLine = "";
+  if (Array.isArray(disclosures) && disclosures.length) {
+    const top = disclosures[0] || {};
+    const label = top.label || "공시";
+    const snippet = top.fact || top.title || "";
+    if (snippet) discLine = `최근 공시(${label}): ${String(snippet).slice(0, 80)}`;
+  }
   const guide = {
     추격주의: `초보 가이드: ${name}은(는) 이미 올랐어요. 지금 따라 사지 말고, 조정을 기다리세요.`,
     매수관심: `초보 가이드: ${name}은(는) 관심 매수 후보예요. 몰빵 금지, 손절가부터 정하세요.`,
@@ -178,5 +186,15 @@ export function beginnerExplain(row, regime = "중립") {
     회피: `초보 가이드: 지금은 ${name}을(를) 사지 않는 편이 낫습니다.`,
   }[action] || `초보 가이드: ${name}은(는) 신중히 보세요.`;
   const summary = [moneyLine, priceLine, themeLine, triggerLine].join(" ");
-  return { summary, backtest, regime: regimeLine, guide, full: [summary, backtest, regimeLine, guide].join("\n") };
+  const parts = [summary, backtest, regimeLine];
+  if (discLine) parts.push(discLine);
+  parts.push(guide);
+  return {
+    summary,
+    backtest,
+    regime: regimeLine,
+    disclosure: discLine,
+    guide,
+    full: parts.join("\n"),
+  };
 }
