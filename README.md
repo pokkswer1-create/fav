@@ -42,6 +42,25 @@ PYTHONPATH=. streamlit run app.py
 - 사이드바에서 실시간 토글을 끄면 데모 샘플 데이터로 전환됩니다.
 - 장중에는 자동 새로고침(60초)을 켤 수 있습니다.
 
+## 무료 API 폴백 (선택)
+
+네이버가 막히거나 공시를 붙이고 싶을 때 `.env` / Vercel 환경변수로 켭니다. 키가 없어도 **aikstockdata**(T+1 종가·공시 보조)는 자동 사용됩니다.
+
+| 우선순위 | 용도 | 환경변수 |
+|---|---|---|
+| 네이버 | 실시간·일봉·수급 (기본) | 없음 |
+| 한국투자증권 Open API | 시세/일봉 백업 | `KIS_APP_KEY`, `KIS_APP_SECRET` (`KIS_USE_MOCK=1` 모의) |
+| aikstockdata | 일봉·공시 보조 (키 없음) | 없음 (비상업·출처 표기) |
+| OpenDART | 공시 보강 | `DART_API_KEY` |
+| 공공데이터포털 KRX | 일봉 백업 | `KRX_SERVICE_KEY` |
+
+예시 파일: `.env.example`
+
+폴백 순서
+- 일봉: 네이버 → 한투 → aikstockdata → KRX
+- 시세: 네이버 → 한투
+- 공시: aikstockdata → (키 있으면) DART 병합
+
 ## 테스트
 
 ```bash
