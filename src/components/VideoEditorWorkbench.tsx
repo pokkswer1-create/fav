@@ -450,20 +450,25 @@ export function VideoEditorWorkbench() {
     }
   }
 
-  async function renderHighlights() {
+  async function renderHighlights(clipsOverride?: VideoClipMarker[], videoFile?: File | null) {
+    const sourceClips = clipsOverride ?? clips;
+    const usable = sourceClips.filter((c) => c.endSec > c.startSec);
+    const videoForRender = videoFile === undefined ? file : videoFile;
     try {
       setBusy(true);
       setError(null);
-      setStatus(null);
+      setStatus("하이라이트 렌더 중…");
       if (downloadUrl) URL.revokeObjectURL(downloadUrl);
 
-      if (validClips.length === 0) {
-        throw new Error("유효한 클립이 없습니다. 종료 시간이 시작보다 커야 합니다.");
+      if (usable.length === 0) {
+        throw new Error(
+          "자를 구간(클립)이 없습니다. «데모로 한 번 돌려보기»를 누르거나, 아래 클립 시작·종료 시간을 넣으세요.",
+        );
       }
 
       const form = new FormData();
-      if (file) form.append("video", file);
-      form.append("clips", JSON.stringify(validClips));
+      if (videoForRender) form.append("video", videoForRender);
+      form.append("clips", JSON.stringify(usable));
 
       const res = await apiFetch("/api/video/highlights", {
         method: "POST",
@@ -480,9 +485,9 @@ export function VideoEditorWorkbench() {
       viewingResultRef.current = true;
       setDownloadUrl(url);
       setPreviewUrl(url);
-      const playerTag = validClips.find((c) => c.playerNumber)?.playerNumber;
+      const playerTag = usable.find((c) => c.playerNumber)?.playerNumber;
       setStatus(
-        `하이라이트 ${validClips.length}클립 생성 완료 · ${(blob.size / 1024).toFixed(0)}KB${
+        `하이라이트 ${usable.length}클립 생성 완료 · ${(blob.size / 1024).toFixed(0)}KB${
           playerTag ? ` · #${playerTag}` : ""
         } · 원본 타임라인 ${mediaDuration.toFixed(1)}s 유지`,
       );
@@ -491,6 +496,23 @@ export function VideoEditorWorkbench() {
     } finally {
       setBusy(false);
     }
+  }
+
+  /** Shortest path: sample video + demo clip times → one highlight file. */
+  async function runDemoHighlightOnce() {
+    const demo = cloneDemoClips();
+    viewingResultRef.current = false;
+    setClips(demo);
+    setMarks([]);
+    setLineup(emptyLineup());
+    setMarkMode(false);
+    setFile(null);
+    setMatchVideoId(DEFAULT_MATCH_VIDEO.id);
+    setPreviewUrl(DEFAULT_MATCH_VIDEO.src);
+    setMediaDuration(DEFAULT_MATCH_VIDEO.approxDurationSec);
+    setError(null);
+    setStatus("데모 클립으로 하이라이트 생성 중…");
+    await renderHighlights(demo, null);
   }
 
   const locked = busy || detecting || tracking;
@@ -509,26 +531,41 @@ export function VideoEditorWorkbench() {
         <p className="eyebrow">HIGHLIGHT DESK</p>
         <h1>경기 영상 하이라이트 편집</h1>
         <p className="lede">
-          <strong>포지션 설정</strong>으로 코트 1~6에 선수를 배치하면 추적 핀이 생깁니다. 위치가
-          어긋나면 <strong>보정</strong>으로 영상을 클릭해 경로만 다듬으면 됩니다.
+          영상만 올리면 아무 일도 안 됩니다. <strong>자를 시간(클립)</strong>이 있어야{" "}
+          <strong>하이라이트 생성</strong>이 돌아갑니다.
         </p>
       </section>
 
-      <HowToPanel
-        title="긴 경기 영상"
-        steps={[
-          `① 전체 세트(또는 업로드, ${MAX_MATCH_DURATION_LABEL})를 고릅니다.`,
-          "② 스카우트 스탬프·포지션 배치로 컷을 만듭니다 (자동 감지/OCR은 짧은 영상용).",
-          "③ 하이라이트 생성 시 해당 구간만 서버로 보냅니다.",
-        ]}
-      />
+      <aside className="first-run-panel" aria-label="지금 해볼 것">
+        <h2>지금 해볼 것 (30초)</h2>
+        <ol>
+          <li>
+            아래 <strong>데모로 한 번 돌려보기</strong>를 누릅니다 → 샘플 컷 MP4가 나옵니다.
+          </li>
+          <li>
+            내 영상을 쓰려면: 업로드 → 아래 클립의 시작·종료만 내 시간에 맞게 고침 →{" "}
+            <strong>하이라이트 생성</strong>.
+          </li>
+          <li>
+            선수 따라가기는 나중에: 오른쪽 코트에 선수 배치 → 포지션 적용 → 추적 선수 컷 만들기.
+          </li>
+        </ol>
+        <button
+          type="button"
+          className="btn primary"
+          disabled={locked}
+          onClick={() => void runDemoHighlightOnce()}
+        >
+          {busy ? "렌더 중…" : "데모로 한 번 돌려보기"}
+        </button>
+      </aside>
 
       <HowToPanel
-        title="포지션 설정 + 보정"
+        title="그다음 (선택)"
         steps={[
-          "① 선수 선택 후 코트 슬롯(P1~P6)에 배치 — 선수별 추적 시작점 저장",
-          "② 로테가 바뀌면 ‘로테 +1’ 또는 슬롯만 다시 맞추기",
-          "③ 핀이 어긋나면 ‘보정 ON’ 후 영상 클릭으로 경로 보정",
+          `내 영상 업로드 (${MAX_MATCH_DURATION_LABEL}) 후 클립 시간만 맞추기`,
+          "스카우트에서 득점 찍으면 타임스탬프 컷이 자동으로 생김",
+          "포지션 P1–P6 배치 → 보정 클릭 → 선수별 추적 (고급)",
         ]}
       />
 
@@ -644,7 +681,9 @@ export function VideoEditorWorkbench() {
                   viewingResultRef.current = false;
                   if (next) {
                     setPreviewUrl(URL.createObjectURL(next));
-                    setStatus(`업로드: ${next.name} · ${MAX_MATCH_DURATION_LABEL}까지 지원`);
+                    setStatus(
+                      `업로드: ${next.name} · 아래 클립 시작·종료를 맞춘 뒤 «하이라이트 생성»을 누르세요`,
+                    );
                   } else {
                     setPreviewUrl(DEFAULT_MATCH_VIDEO.src);
                     setMatchVideoId(DEFAULT_MATCH_VIDEO.id);
@@ -902,7 +941,7 @@ export function VideoEditorWorkbench() {
               type="button"
               className="btn primary"
               disabled={locked || validClips.length === 0}
-              onClick={renderHighlights}
+              onClick={() => void renderHighlights()}
             >
               {busy ? "렌더 중…" : "하이라이트 생성"}
             </button>

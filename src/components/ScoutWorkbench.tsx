@@ -450,15 +450,18 @@ export function ScoutWorkbench() {
       <section className="workbench-intro">
         <p className="eyebrow">LIVE SCOUT</p>
         <h1>포인트 스카우트</h1>
-        <p className="lede">영상 시계에 맞춰 득점·코딩을 남기면, 그 시각이 영상 컷이 됩니다.</p>
+        <p className="lede">
+          영상만 틀어도 기록이 안 생깁니다. 득점 날 때 오른쪽 <strong>킬/에이스/블로킹</strong>만
+          누르면 그 시각이 컷이 됩니다. 처음엔 «데모 스카우트»로 채워 보세요.
+        </p>
       </section>
 
       <HowToPanel
-        title="스카우트 사용법"
+        title="스카우트 — 최소 루프"
         steps={[
-          `① 전체 경기 세트(또는 업로드, ${MAX_MATCH_DURATION_LABEL})를 고릅니다.`,
-          "② 영상 시계에 맞춰 득점·프로 코딩을 남깁니다.",
-          "③ 저장 후 타임스탬프 컷 → 편집, 또는 전력분석으로 이동합니다.",
+          "① «데모 스카우트»로 타임스탬프가 어떻게 쌓이는지 보기",
+          "② 실전이면 영상 재생 → 득점할 때만 빠른 입력 버튼",
+          "③ 저장 → 영상편집으로 보내 하이라이트 만들기",
         ]}
       />
 
