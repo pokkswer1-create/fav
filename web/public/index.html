@@ -182,14 +182,22 @@
       <div class="metric"><div class="k">시장 상태</div><div class="v" id="mRegime">-</div></div>
       <div class="metric"><div class="k">코스피</div><div class="v" id="mKospi">-</div></div>
       <div class="metric"><div class="k">코스피 등락(%)</div><div class="v" id="mChg">-</div></div>
-      <div class="metric"><div class="k">오늘 추천</div><div class="v" id="mPick">-</div></div>
+      <div class="metric"><div class="k">매수/대기</div><div class="v" id="mPick">-</div></div>
       <div class="metric"><div class="k">모드</div><div class="v" id="mMode">-</div></div>
       <div class="metric"><div class="k">데이터소스</div><div class="v" id="mProv">-</div></div>
       <div class="metric"><div class="k">유니버스</div><div class="v" id="mUniv">-</div></div>
     </div>
 
-    <h2>오늘 데이터 기반 골라준 종목</h2>
-    <div class="cards" id="cards"></div>
+    <p class="cap" id="tierNote" style="margin-top:8px"></p>
+
+    <h2>단기 매수 <span class="status" id="capShortBuy"></span></h2>
+    <div class="cards" id="cardsShortBuy"></div>
+    <h2>단기 대기 <span class="status" id="capShortWatch"></span></h2>
+    <div class="cards" id="cardsShortWatch"></div>
+    <h2>장기 매수 <span class="status" id="capLongBuy"></span></h2>
+    <div class="cards" id="cardsLongBuy"></div>
+    <h2>장기 대기 <span class="status" id="capLongWatch"></span></h2>
+    <div class="cards" id="cardsLongWatch"></div>
 
     <h2>가격 차트 · 손절/익절</h2>
     <div class="chart-box">
@@ -206,7 +214,7 @@
       <table>
         <thead>
           <tr>
-            <th>순위</th><th>종목</th><th>테마</th><th>액션</th><th>현재가</th>
+            <th>구분</th><th>순위</th><th>종목</th><th>테마</th><th>액션</th><th>현재가</th>
             <th>손절가</th><th>1차익절</th><th>2차익절</th>
             <th>큰손(억)</th><th>상승확률</th><th>예상일수</th><th>돌파/기대</th><th>초보 설명</th>
           </tr>
@@ -374,24 +382,13 @@
       }
     }
 
-    function render(data) {
-      const r = data.regime || {};
-      document.getElementById("mRegime").textContent = r.regime || "-";
-      document.getElementById("mKospi").textContent = fmt(r.kospi_price);
-      document.getElementById("mChg").textContent = r.kospi_change_pct ?? "-";
-      document.getElementById("mPick").textContent = (data.picks || []).length;
-      document.getElementById("mMode").textContent = data.mode || "live";
-      const prov = data.providers || {};
-      const on = ["naver", "aikstock", "kis", "dart", "krx"].filter((k) => prov[k]).join("+") || "naver";
-      document.getElementById("mProv").textContent = `${on} / q:${data.quote_source || "-"} / d:${data.disclosure_source || "-"}`;
-      const univSize = data.universe_size ?? (data.picks || []).length;
-      const marketTotal = data.market_total ?? univSize;
-      document.getElementById("mUniv").textContent =
-        data.full_market ? `${univSize}/${marketTotal}` : String(univSize);
-
-      latestPicks = data.picks || [];
-      const cards = document.getElementById("cards");
-      cards.innerHTML = latestPicks.map((p) => {
+    function renderCards(list, elId) {
+      const cards = document.getElementById(elId);
+      if (!list.length) {
+        cards.innerHTML = "<p class='status'>해당 없음</p>";
+        return;
+      }
+      cards.innerHTML = list.map((p) => {
         const chg = Number(p.realtime_change_pct || 0);
         const cls = chg >= 0 ? "up" : "down";
         const exp = p.expectancy || {};
@@ -403,20 +400,20 @@
         const discHtml = disc
           ? `<div class="why" style="margin-top:6px">공시 · ${disc.label || "공시"}: ${(disc.fact || disc.title || "").slice(0, 70)}${disc.url ? ` <a href="${disc.url}" target="_blank" rel="noopener">보기</a>` : ""}</div>`
           : "";
+        const tier = `${p.horizon_label || ""}/${p.trade_tier_label || ""}`;
         return `
           <div class="card" data-ticker="${p.ticker}" role="button" tabindex="0">
-            <div class="rank">${p.pick_label || ""}</div>
+            <div class="rank">${p.pick_label || tier}</div>
             <h3>${p.name}</h3>
             <div class="price">${fmt(p.latest_close)} <span class="${cls}">${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%</span></div>
-            <div class="action ${actionClass(p.action)}">${p.action || "-"}</div>
+            <div class="action ${actionClass(p.action)}">${p.action || "-"} · ${tier}</div>
             <div class="why">${p.reason || ""}</div>
             <div class="why" style="margin-top:8px"><strong style="color:#e0a45a">손절</strong> ${fmt(stop)} (−${risk.stop_pct || 6}%) · <strong style="color:#5ec28a">1차익절</strong> ${fmt(take1)} (+${risk.take1_pct || 8}%) · <strong style="color:#5ec28a">2차</strong> ${fmt(take2)}</div>
             <div class="why" style="margin-top:8px">${p.beginner_summary || p.pick_why || ""}</div>
-            <div class="why" style="margin-top:6px">돌파 ${p.is_breakout ? "O" : "X"} · 상승확률 ${Number((exp.up_prob_pct ?? exp.win_rate_pct) || 0).toFixed(0)}% · 약 ${exp.likely_within_days || "-"}거래일 · 기대 ${Number(exp.expectancy_pct || 0).toFixed(1)}% · src ${p.data_source || "-"}</div>
+            <div class="why" style="margin-top:6px">돌파 ${p.is_breakout ? "O" : "X"} · 상승확률 ${Number((exp.up_prob_pct ?? exp.win_rate_pct) || 0).toFixed(0)}% · 약 ${exp.likely_within_days || "-"}거래일 · 기대 ${Number(exp.expectancy_pct || 0).toFixed(1)}%</div>
             ${discHtml}
           </div>`;
-      }).join("") || "<p class='status'>추천 없음</p>";
-
+      }).join("");
       cards.querySelectorAll(".card").forEach((el) => {
         el.addEventListener("click", () => selectPick(el.dataset.ticker));
         el.addEventListener("keydown", (ev) => {
@@ -426,10 +423,48 @@
           }
         });
       });
+    }
+
+    function render(data) {
+      const r = data.regime || {};
+      document.getElementById("mRegime").textContent = r.regime || "-";
+      document.getElementById("mKospi").textContent = fmt(r.kospi_price);
+      document.getElementById("mChg").textContent = r.kospi_change_pct ?? "-";
+      document.getElementById("mPick").textContent = `${data.buy_count ?? 0}/${data.watch_count ?? 0}`;
+      document.getElementById("mMode").textContent = data.mode || "live";
+      const prov = data.providers || {};
+      const on = ["naver", "aikstock", "kis", "dart", "krx"].filter((k) => prov[k]).join("+") || "naver";
+      document.getElementById("mProv").textContent = `${on} / q:${data.quote_source || "-"} / d:${data.disclosure_source || "-"}`;
+      const univSize = data.universe_size ?? (data.picks || []).length;
+      const marketTotal = data.market_total ?? univSize;
+      document.getElementById("mUniv").textContent =
+        data.full_market ? `${univSize}/${marketTotal}` : String(univSize);
+
+      const rules = data.tier_rules || {};
+      const note = data.defense_buys_blocked
+        ? "방어장이라 오늘 매수 추천은 막혀 있어요. 대기만 보세요."
+        : `단기=예상 ≤${rules.short_within_days || 5}거래일 · 매수=돌파액션+샘플≥${rules.buy_min_samples || 10}+승률≥${rules.buy_min_up_prob || 55}%+기대>0 (기대수익 순)`;
+      document.getElementById("tierNote").textContent = note;
+
+      const shortBuy = data.short_buy || [];
+      const shortWatch = data.short_watch || [];
+      const longBuy = data.long_buy || [];
+      const longWatch = data.long_watch || [];
+      document.getElementById("capShortBuy").textContent = `(${shortBuy.length})`;
+      document.getElementById("capShortWatch").textContent = `(${shortWatch.length})`;
+      document.getElementById("capLongBuy").textContent = `(${longBuy.length})`;
+      document.getElementById("capLongWatch").textContent = `(${longWatch.length})`;
+      renderCards(shortBuy, "cardsShortBuy");
+      renderCards(shortWatch, "cardsShortWatch");
+      renderCards(longBuy, "cardsLongBuy");
+      renderCards(longWatch, "cardsLongWatch");
+
+      latestPicks = [...shortBuy, ...longBuy, ...shortWatch, ...longWatch];
+      if (!latestPicks.length) latestPicks = data.picks || [];
 
       const sel = document.getElementById("chartPick");
       sel.innerHTML = latestPicks.map((p) =>
-        `<option value="${p.ticker}">${p.pick_rank || ""}. ${p.name} (${p.ticker})</option>`
+        `<option value="${p.ticker}">${p.pick_label || ""} ${p.name} (${p.ticker})</option>`
       ).join("") || `<option value="">추천 없음</option>`;
 
       const keep = latestPicks.some((p) => p.ticker === selectedTicker)
@@ -444,9 +479,11 @@
       document.getElementById("tbody").innerHTML = latestPicks.map((p) => {
         const exp = p.expectancy || {};
         const risk = p.risk || {};
+        const bucket = `${p.horizon_label || "-"}/${p.trade_tier_label || "-"}`;
         return `
         <tr>
-          <td>${p.pick_rank}</td>
+          <td>${bucket}</td>
+          <td>${p.pick_rank || ""}</td>
           <td>${p.name} (${p.ticker})</td>
           <td>${p.theme}</td>
           <td>${p.action}</td>

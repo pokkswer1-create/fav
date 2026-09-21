@@ -23,12 +23,12 @@ from analyzer.screener import (
     analyze_period,
     estimate_upside_probability,
     market_regime,
-    pick_stocks,
     score_money_in_price_flat,
     screen_candidates,
 )
 from analyzer.signals import backtest_setup_expectancy, beginner_explain, detect_breakout
 from analyzer.themes import full_market_size, list_themes, stocks_for_theme
+from analyzer.tiers import build_tiered_picks
 
 
 def _ymd(dt: datetime) -> str:
@@ -328,14 +328,23 @@ def scan_market(
         leaders_only=leaders_only,
         flat_only=flat_only,
     )
-    picks = pick_stocks(raw, top_n=5)
-    refreshed_picks = []
-    for row in picks:
+    # 액션을 먼저 확정한 뒤 단기/장기·매수/대기 티어 분류
+    actioned: list[dict] = []
+    for row in raw:
         comment = action_comment(row, regime)
         item = dict(row)
         item["action"] = comment["action"]
         item["reason"] = comment["reason"]
-        refreshed_picks.append(item)
+        explain = beginner_explain(item, regime)
+        item["beginner_summary"] = explain["summary"]
+        item["beginner_backtest"] = explain["backtest"]
+        item["beginner_guide"] = explain["guide"]
+        item["beginner_disclosure"] = explain.get("disclosure") or ""
+        item["beginner_full"] = explain["full"]
+        actioned.append(item)
+
+    tiers = build_tiered_picks(actioned, regime=regime, top_n=5)
+    refreshed_picks = tiers["picks"]
 
     refreshed = []
     for row in candidates:
@@ -360,6 +369,14 @@ def scan_market(
         "theme_top": theme_top,
         "all": raw,
         "picks": refreshed_picks,
+        "short_buy": tiers["short_buy"],
+        "short_watch": tiers["short_watch"],
+        "long_buy": tiers["long_buy"],
+        "long_watch": tiers["long_watch"],
+        "buy_count": tiers["buy_count"],
+        "watch_count": tiers["watch_count"],
+        "defense_buys_blocked": tiers["defense_buys_blocked"],
+        "tier_rules": tiers["rules"],
         "candidates": refreshed,
         "errors": errors,
         "themes": list_themes(),

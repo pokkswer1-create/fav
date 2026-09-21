@@ -3,7 +3,6 @@ import { fetchInvestorTrend, fetchRealtimeIndex } from "../lib/naver.js";
 import {
   actionComment,
   marketRegime,
-  pickStocks,
   scoreMoneyInPriceFlat,
 } from "../lib/screener.js";
 import {
@@ -18,6 +17,7 @@ import {
   fetchQuotesCascaded,
   providerStatus,
 } from "../lib/providers/market.js";
+import { buildTieredPicks } from "../lib/tiers.js";
 
 export const config = {
   maxDuration: 60,
@@ -160,7 +160,7 @@ export default async function handler(req, res) {
       })
       .filter(Boolean);
 
-    const picks = pickStocks(raw, topN).map((row) => {
+    const actioned = raw.map((row) => {
       const comment = actionComment(row, regime);
       const item = { ...row, action: comment.action, reason: comment.reason };
       const explain = beginnerExplain(item, regime);
@@ -173,6 +173,9 @@ export default async function handler(req, res) {
         beginner_full: explain.full,
       };
     });
+
+    const tiers = buildTieredPicks(actioned, { regime, topN });
+    const picks = tiers.picks;
 
     const themeScores = {};
     for (const row of raw) {
@@ -192,6 +195,14 @@ export default async function handler(req, res) {
         as_of: idx.as_of,
       },
       picks,
+      short_buy: tiers.short_buy,
+      short_watch: tiers.short_watch,
+      long_buy: tiers.long_buy,
+      long_watch: tiers.long_watch,
+      buy_count: tiers.buy_count,
+      watch_count: tiers.watch_count,
+      defense_buys_blocked: tiers.defense_buys_blocked,
+      tier_rules: tiers.rules,
       theme_top,
       themes: listThemes(),
       scanned_at: new Date().toISOString().replace("T", " ").slice(0, 19),
