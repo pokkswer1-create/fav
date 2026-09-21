@@ -9,9 +9,9 @@ from plotly.subplots import make_subplots
 
 from analyzer.data import build_stock_snapshot, scan_market
 from analyzer.rules import action_comment
-from analyzer.screener import pick_stocks
 from analyzer.signals import beginner_explain
 from analyzer.themes import list_themes
+from analyzer.tiers import build_tiered_picks
 
 st.set_page_config(page_title="테마 수급 분석기", layout="wide")
 st.title("테마 수급 종목 분석기")
@@ -28,6 +28,7 @@ with st.sidebar:
     theme = st.selectbox("테마", ["전체", *list_themes()])
     lookback = st.slider("수급 룩백(거래일)", 10, 40, 20)
     pick_n = st.slider("추천 종목 수", 3, 10, 5)
+    scan_limit = st.slider("전체 스캔 종목 수(유동성 상위)", 50, 300, 150, 10)
     min_score = st.slider("후보 최소 점수", 0, 100, 20)
     leaders_only = st.checkbox("후보: 테마 대장만", value=False)
     flat_only = st.checkbox("후보: 수급↑·가격정체만", value=False)
@@ -49,6 +50,8 @@ if need_scan:
             leaders_only=leaders_only,
             flat_only=flat_only,
             demo=demo,
+            scan_limit=int(scan_limit),
+            full_market=True,
         )
         st.session_state.scan_mode = "demo" if demo else "live"
 
@@ -56,21 +59,27 @@ result = st.session_state.scan_result
 regime = result["regime"]
 regime_name = regime.get("regime", "중립")
 
-picks = pick_stocks(result.get("all") or [], top_n=pick_n)
-refreshed = []
-for row in picks:
-    item = dict(row)
-    comment = action_comment(item, regime_name)
-    item["action"] = comment["action"]
-    item["reason"] = comment["reason"]
-    explain = beginner_explain(item, regime_name)
-    item["beginner_summary"] = explain["summary"]
-    item["beginner_backtest"] = explain["backtest"]
-    item["beginner_guide"] = explain["guide"]
-    item["beginner_full"] = explain["full"]
-    refreshed.append(item)
-picks = refreshed
-result["picks"] = picks
+if "short_buy" not in result:
+    actioned = []
+    for row in result.get("all") or []:
+        item = dict(row)
+        comment = action_comment(item, regime_name)
+        item["action"] = comment["action"]
+        item["reason"] = comment["reason"]
+        explain = beginner_explain(item, regime_name)
+        item["beginner_summary"] = explain["summary"]
+        item["beginner_backtest"] = explain["backtest"]
+        item["beginner_guide"] = explain["guide"]
+        item["beginner_disclosure"] = explain.get("disclosure") or ""
+        item["beginner_full"] = explain["full"]
+        actioned.append(item)
+    result.update(build_tiered_picks(actioned, regime=regime_name, top_n=pick_n))
+
+picks = result.get("picks") or []
+short_buy = result.get("short_buy") or []
+short_watch = result.get("short_watch") or []
+long_buy = result.get("long_buy") or []
+long_watch = result.get("long_watch") or []
 if picks and "selected_ticker" not in st.session_state:
     st.session_state.selected_ticker = picks[0]["ticker"]
 
@@ -78,37 +87,43 @@ c1, c2, c3, c4, c5 = st.columns(5)
 c1.metric("시장 상태", regime_name)
 c2.metric("코스피", f"{regime.get('kospi_price', 0):,.2f}")
 c3.metric("코스피 등락(%)", regime.get("kospi_change_pct", 0))
-c4.metric("오늘 추천", len(picks))
+c4.metric("매수/대기", f"{result.get('buy_count', 0)}/{result.get('watch_count', 0)}")
 c5.metric("모드", result.get("mode", "-"))
 st.caption(
     f"스캔시각 {result.get('scanned_at', '-')} · 데이터 {regime.get('data_source', '-')} · "
-    f"장상태 {regime.get('market_status', '-')}"
+    f"장상태 {regime.get('market_status', '-')} · "
+    f"시세 {result.get('quote_source', '-')} · 공시 {result.get('disclosure_source', '-')} · "
+    f"유니버스 {result.get('universe_size', '-')} / 전종목 {result.get('market_total', '-')} · "
+    f"providers {result.get('providers', {})}"
 )
+if result.get("defense_buys_blocked"):
+    st.warning("방어장이라 오늘 매수 추천은 비활성화했어요. 대기 종목만 보세요.")
+else:
+    rules = result.get("tier_rules") or {}
+    st.info(
+        f"단기=예상 ≤{rules.get('short_within_days', 5)}거래일 · "
+        f"매수=돌파액션+샘플≥{rules.get('buy_min_samples', 10)}"
+        f"+승률≥{rules.get('buy_min_up_prob', 55)}%+기대>0 · 기대수익 순"
+    )
 
-with st.expander("초보자를 위한 읽는 법", expanded=True):
+with st.expander("초보자를 위한 읽는 법", expanded=False):
     st.markdown(
         """
-1. **액션**만 먼저 보세요
-   - `매수관심`: 조건+돌파 → 관심 매수 후보
-   - `분할관심`: 상위+돌파근접 → 소액으로 나눠 사기만 검토
-   - `돌파대기`: 조건은 좋은데 고점 돌파 전 → **그 순간을 노리세요**
-   - `관심목록` / `회피`: 우선순위 낮음
-2. **왜?** 는 쉬운 말로 적혀 있어요.
-3. **과거 성적**은 참고용이에요. 미래 보장이 아닙니다.
-4. 전부 ‘지켜보기’가 아닙니다. 상위 종목은 **돌파대기/분할관심**으로 다음 행동이 나와요.
+1. **오늘 매수**: 조건이 강한 진입 후보 (없을 수 있음 = 정상)
+2. **대기**: 관심은 가지만 아직 진입 전
+3. **단기/장기**: 과거 유사셋업 반응 속도(예상 거래일) 기준
+4. 과거 성적은 참고용이에요. 미래 보장이 아닙니다.
 """
     )
 
-st.subheader("오늘 데이터 기반 골라준 종목")
-st.caption(
-    "큰손 유입 · 가격 정체 · 테마 대장 · 연속 수급 · 돌파 · 과거 기대값을 합쳐 "
-    f"Top {len(picks) or pick_n}을 고릅니다."
-)
-if not picks:
-    st.warning("스캔된 종목이 없어 추천을 만들 수 없습니다.")
-else:
-    cols = st.columns(min(len(picks), 5))
-    for i, p in enumerate(picks[:5]):
+
+def _render_pick_row(title: str, rows: list) -> None:
+    st.subheader(title)
+    if not rows:
+        st.caption("해당 없음")
+        return
+    cols = st.columns(min(len(rows), 5))
+    for i, p in enumerate(rows[:5]):
         with cols[i % len(cols)]:
             exp = p.get("expectancy") or {}
             st.markdown(f"### {p.get('pick_label', f'{i+1}위')} · {p['name']}")
@@ -121,27 +136,28 @@ else:
             st.caption(p.get("beginner_summary") or p.get("pick_why") or "")
             st.write(
                 f"돌파: {'O' if p.get('is_breakout') else 'X'} · "
-                f"기대수익 {float(exp.get('expectancy_pct', 0)):+.1f}% "
-                f"(승률 {exp.get('win_rate_pct', 0)}% / 표본 {exp.get('sample_size', 0)})"
+                f"상승확률 {exp.get('up_prob_pct', exp.get('win_rate_pct', 0))}% · "
+                f"약 {exp.get('likely_within_days', 0) or '-'}거래일 · "
+                f"기대 {float(exp.get('expectancy_pct', 0)):+.1f}%"
             )
-            risk = p.get("risk") or {}
-            stop = risk.get("stop_price") or 0
-            take1 = risk.get("take1_price") or 0
-            take2 = risk.get("take2_price") or 0
-            st.write(
-                f"**손절** {stop:,.0f}원 (−{risk.get('stop_pct', 6)}%) · "
-                f"**1차익절** {take1:,.0f}원 (+{risk.get('take1_pct', 8)}%) · "
-                f"**2차익절** {take2:,.0f}원 (+{risk.get('take2_pct', 15)}%)"
-            )
-            if st.button("이 종목 상세", key=f"pick_{p['ticker']}"):
+            if st.button("이 종목 상세", key=f"pick_{title}_{p['ticker']}"):
                 st.session_state.selected_ticker = p["ticker"]
 
+
+_render_pick_row(f"단기 매수 ({len(short_buy)})", short_buy)
+_render_pick_row(f"단기 대기 ({len(short_watch)})", short_watch)
+_render_pick_row(f"장기 매수 ({len(long_buy)})", long_buy)
+_render_pick_row(f"장기 대기 ({len(long_watch)})", long_watch)
+
+all_tier_rows = short_buy + long_buy + short_watch + long_watch
+if all_tier_rows:
     pick_rows = []
-    for p in picks:
+    for p in all_tier_rows:
         exp = p.get("expectancy") or {}
         risk = p.get("risk") or {}
         pick_rows.append(
             {
+                "구분": f"{p.get('horizon_label', '')}/{p.get('trade_tier_label', '')}",
                 "순위": p.get("pick_rank", 0),
                 "종목": p["name"],
                 "테마": p["theme"],
@@ -150,15 +166,10 @@ else:
                 "손절가": risk.get("stop_price", 0),
                 "1차익절": risk.get("take1_price", 0),
                 "2차익절": risk.get("take2_price", 0),
-                "손절%": risk.get("stop_pct", 6),
-                "익절%": risk.get("take1_pct", 8),
-                "초보 한줄": p.get("beginner_summary", ""),
-                "돌파": "O" if p.get("is_breakout") else "",
+                "상승확률%": exp.get("up_prob_pct", exp.get("win_rate_pct", 0)),
+                "예상일수": exp.get("likely_within_days", 0),
                 "기대수익%": exp.get("expectancy_pct", 0),
-                "승률%": exp.get("win_rate_pct", 0),
-                "추천점수": p.get("pick_score", 0),
-                "큰손(억)": round(float(p.get("smart_money_net", 0)) / 1e8, 1),
-                "기간%": p.get("price_change_pct", 0),
+                "초보 한줄": p.get("beginner_summary", ""),
             }
         )
     st.dataframe(pd.DataFrame(pick_rows), use_container_width=True, hide_index=True)
@@ -229,21 +240,89 @@ m5.metric("기대수익%", exp.get("expectancy_pct", 0))
 
 st.markdown(
     f"**액션:** {selected.get('action')} — {selected.get('reason')}  \n"
-    f"**과거 유사셋업:** 승률 {exp.get('win_rate_pct', 0)}% · "
+    f"**과거 유사셋업:** 상승확률 {exp.get('up_prob_pct', exp.get('win_rate_pct', 0))}% · "
+    f"1차익절 도달 {exp.get('hit_take_prob_pct', 0)}% · "
+    f"오른 경우 중간 약 {exp.get('likely_within_days', 0)}거래일 "
+    f"(최대 {exp.get('horizon_days', 10)}거래일) · "
     f"평균익 {exp.get('avg_win_pct', 0)}% · 평균손 {exp.get('avg_loss_pct', 0)}% · "
     f"표본 {exp.get('sample_size', 0)}  \n"
-    f"**+5% 확률(참고):** {prob.get('prob_target_pct', 0)}% (표본 {prob.get('sample_size', 0)})  \n"
+    f"**+5% 확률(단순 전방수익률 참고):** {prob.get('prob_target_pct', 0)}% (표본 {prob.get('sample_size', 0)})  \n"
     f"**리스크 가이드:** 손절 {risk.get('stop_price')} / 1차익절 {risk.get('take1_price')} / "
     f"2차익절 {risk.get('take2_price')} / 시간손절 {risk.get('time_stop_days')}일 / "
     f"계좌리스크 {risk.get('account_risk_pct')}%"
 )
 
 if analysis.get("dates"):
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.6, 0.4], vertical_spacing=0.08)
-    fig.add_trace(go.Scatter(x=analysis["dates"], y=analysis["closes"], name="종가"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=analysis["dates"], y=analysis["cum_smart"], name="누적 큰손"), row=2, col=1)
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.65, 0.35], vertical_spacing=0.08)
+    fig.add_trace(go.Scatter(x=analysis["dates"], y=analysis["closes"], name="종가", line=dict(color="#4aa3ff", width=2)), row=1, col=1)
+    # 손절/익절/현재가 수평선
+    x0, x1 = analysis["dates"][0], analysis["dates"][-1]
+    entry = float(selected.get("latest_close") or 0)
+    shapes = []
+    annotations = []
+    levels = [
+        ("손절", risk.get("stop_price"), "#d66a6a", "dash"),
+        ("현재가", entry, "#eef3f7", "solid"),
+        ("1차익절", risk.get("take1_price"), "#5ec28a", "dash"),
+        ("2차익절", risk.get("take2_price"), "#2bb0a6", "dot"),
+    ]
+    for label, y, color, dash in levels:
+        if not y:
+            continue
+        yv = float(y)
+        shapes.append(
+            dict(
+                type="line",
+                xref="x",
+                yref="y",
+                x0=x0,
+                x1=x1,
+                y0=yv,
+                y1=yv,
+                line=dict(color=color, width=1.5, dash=dash),
+            )
+        )
+        annotations.append(
+            dict(
+                xref="paper",
+                yref="y",
+                x=1.01,
+                y=yv,
+                text=f"{label} {yv:,.0f}",
+                showarrow=False,
+                font=dict(size=11, color=color),
+                xanchor="left",
+            )
+        )
+    if selected.get("breakout", {}).get("lookback_high"):
+        bh = float(selected["breakout"]["lookback_high"])
+        shapes.append(
+            dict(
+                type="line",
+                xref="x",
+                yref="y",
+                x0=x0,
+                x1=x1,
+                y0=bh,
+                y1=bh,
+                line=dict(color="#e0a45a", width=1, dash="dashdot"),
+            )
+        )
+        annotations.append(
+            dict(
+                xref="paper",
+                yref="y",
+                x=1.01,
+                y=bh,
+                text=f"돌파기준 {bh:,.0f}",
+                showarrow=False,
+                font=dict(size=11, color="#e0a45a"),
+                xanchor="left",
+            )
+        )
+    fig.add_trace(go.Scatter(x=analysis["dates"], y=analysis["cum_smart"], name="누적 큰손", line=dict(color="#2bb0a6")), row=2, col=1)
     fig.add_trace(
-        go.Scatter(x=analysis["dates"], y=analysis["cum_foreign"], name="누적 외인", line=dict(dash="dot")),
+        go.Scatter(x=analysis["dates"], y=analysis["cum_foreign"], name="누적 외인", line=dict(dash="dot", color="#93a4b3")),
         row=2,
         col=1,
     )
@@ -252,12 +331,19 @@ if analysis.get("dates"):
             x=analysis["dates"],
             y=analysis["cum_institution"],
             name="누적 기관",
-            line=dict(dash="dash"),
+            line=dict(dash="dash", color="#e0a45a"),
         ),
         row=2,
         col=1,
     )
-    fig.update_layout(height=560, margin=dict(l=10, r=10, t=30, b=10), legend=dict(orientation="h"))
+    fig.update_layout(
+        height=620,
+        margin=dict(l=10, r=110, t=30, b=10),
+        legend=dict(orientation="h"),
+        shapes=shapes,
+        annotations=annotations,
+    )
+    st.caption("차트 가로선: 손절(빨강) · 현재가(흰) · 1차익절(연녹) · 2차익절(청녹) · 돌파기준(주황)")
     st.plotly_chart(fig, use_container_width=True)
 
 if result["errors"]:
