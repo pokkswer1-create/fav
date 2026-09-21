@@ -1,4 +1,4 @@
-import { listThemes, stocksForTheme } from "../lib/themes.js";
+import { fullMarketSize, listThemes, stocksForTheme } from "../lib/themes.js";
 import { fetchInvestorTrend, fetchRealtimeIndex } from "../lib/naver.js";
 import {
   actionComment,
@@ -112,11 +112,18 @@ export default async function handler(req, res) {
     const theme = url.searchParams.get("theme") || "전체";
     const lookback = Number(url.searchParams.get("lookback") || 20);
     const topN = Number(url.searchParams.get("top") || 5);
+    const scanLimit = Number(url.searchParams.get("scan_limit") || 80);
+    const fullMarket = theme === "전체" || theme === "ALL";
+    const effectiveLimit = fullMarket ? Math.min(Math.max(scanLimit, 40), 120) : 9999;
 
     const idx = await fetchRealtimeIndex("KOSPI");
     const smartProxy = Number(idx.change_pct || 0) >= 0 ? 1 : -1;
     const regime = marketRegime(Number(idx.change_pct || 0), smartProxy);
-    const universe = stocksForTheme(theme === "전체" ? null : theme);
+    const universe = await stocksForTheme(theme, {
+      fullMarket,
+      scanLimit: effectiveLimit,
+    });
+    const marketTotal = fullMarket ? await fullMarketSize() : universe.length;
     const uniqueItems = [];
     const seenTickers = new Set();
     for (const item of universe) {
@@ -131,7 +138,7 @@ export default async function handler(req, res) {
       ]);
 
     const snapshots = (
-      await mapPool(uniqueItems, 10, async (item) => {
+      await mapPool(uniqueItems, 8, async (item) => {
         try {
           return await buildSnapshot(
             item,
@@ -191,6 +198,9 @@ export default async function handler(req, res) {
       mode: "live",
       count: raw.length,
       universe_size: uniqueItems.length,
+      market_total: marketTotal,
+      scan_limit: fullMarket ? effectiveLimit : uniqueItems.length,
+      full_market: fullMarket,
       providers: providerStatus(),
       quote_source: quoteSource,
       disclosure_source: disclosureSource,

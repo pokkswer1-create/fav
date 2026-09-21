@@ -28,7 +28,7 @@ from analyzer.screener import (
     screen_candidates,
 )
 from analyzer.signals import backtest_setup_expectancy, beginner_explain, detect_breakout
-from analyzer.themes import list_themes, stocks_for_theme
+from analyzer.themes import full_market_size, list_themes, stocks_for_theme
 
 
 def _ymd(dt: datetime) -> str:
@@ -254,10 +254,18 @@ def scan_market(
     flat_only: bool = True,
     demo: bool = False,
     max_workers: int = 12,
+    scan_limit: int = 150,
+    full_market: bool = True,
 ) -> dict:
     regime_info = fetch_market_regime(demo=demo)
     regime = regime_info["regime"]
-    universe = stocks_for_theme(theme)
+    use_full = bool(full_market) and (theme is None or theme in {"전체", "ALL"})
+    universe = stocks_for_theme(
+        theme,
+        full_market=use_full,
+        scan_limit=scan_limit,
+    )
+    market_total = full_market_size() if use_full else len(universe)
     unique_items: list[dict] = []
     seen: set[str] = set()
     for item in universe:
@@ -360,4 +368,8 @@ def scan_market(
         "providers": provider_status(),
         "quote_source": quote_source,
         "disclosure_source": disclosure_source,
+        "universe_size": len(unique_items),
+        "market_total": market_total,
+        "scan_limit": scan_limit if use_full else len(unique_items),
+        "full_market": use_full,
     }

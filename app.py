@@ -28,6 +28,7 @@ with st.sidebar:
     theme = st.selectbox("테마", ["전체", *list_themes()])
     lookback = st.slider("수급 룩백(거래일)", 10, 40, 20)
     pick_n = st.slider("추천 종목 수", 3, 10, 5)
+    scan_limit = st.slider("전체 스캔 종목 수(유동성 상위)", 50, 300, 150, 10)
     min_score = st.slider("후보 최소 점수", 0, 100, 20)
     leaders_only = st.checkbox("후보: 테마 대장만", value=False)
     flat_only = st.checkbox("후보: 수급↑·가격정체만", value=False)
@@ -49,6 +50,8 @@ if need_scan:
             leaders_only=leaders_only,
             flat_only=flat_only,
             demo=demo,
+            scan_limit=int(scan_limit),
+            full_market=True,
         )
         st.session_state.scan_mode = "demo" if demo else "live"
 
@@ -85,6 +88,7 @@ st.caption(
     f"스캔시각 {result.get('scanned_at', '-')} · 데이터 {regime.get('data_source', '-')} · "
     f"장상태 {regime.get('market_status', '-')} · "
     f"시세 {result.get('quote_source', '-')} · 공시 {result.get('disclosure_source', '-')} · "
+    f"유니버스 {result.get('universe_size', '-')} / 전종목 {result.get('market_total', '-')} · "
     f"providers {result.get('providers', {})}"
 )
 

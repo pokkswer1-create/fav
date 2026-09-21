@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from analyzer.universe import load_full_universe, select_scan_universe
+
 THEMES: dict[str, list[dict[str, str]]] = {
     "HBM/반도체": [
         {"ticker": "000660", "name": "SK하이닉스"},
@@ -148,11 +150,42 @@ def list_themes() -> list[str]:
     return list(THEMES.keys())
 
 
-def stocks_for_theme(theme: str | None = None) -> list[dict[str, str]]:
+def stocks_for_theme(
+    theme: str | None = None,
+    *,
+    full_market: bool = True,
+    scan_limit: int = 150,
+) -> list[dict[str, str]]:
+    """테마 시드 또는 전 종목 유니버스.
+
+    - 특정 테마: 기존 시드
+    - 전체/None: 상장 전 종목 중 거래대금 상위 `scan_limit` (기본 150)
+      full_market=False 이면 예전처럼 테마 시드 합집합
+    """
     if theme and theme not in {"전체", "ALL"}:
         return [{"theme": theme, **s} for s in THEMES.get(theme, [])]
+
+    if full_market:
+        rows = load_full_universe()
+        selected = select_scan_universe(rows, limit=max(1, int(scan_limit)))
+        return [
+            {
+                "ticker": r["ticker"],
+                "name": r["name"],
+                "theme": str(r.get("theme") or r.get("market") or "전체"),
+            }
+            for r in selected
+        ]
+
     rows: list[dict[str, str]] = []
     for theme_name, stocks in THEMES.items():
         for s in stocks:
             rows.append({"theme": theme_name, **s})
     return rows
+
+
+def full_market_size() -> int:
+    try:
+        return len(load_full_universe())
+    except Exception:  # noqa: BLE001
+        return 0

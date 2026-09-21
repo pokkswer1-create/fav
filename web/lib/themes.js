@@ -1,3 +1,5 @@
+import { loadFullUniverse, selectScanUniverse } from "./universe.js";
+
 /** 테마 시드 */
 export const THEMES = {
   "HBM/반도체": [
@@ -144,13 +146,30 @@ export function listThemes() {
   return Object.keys(THEMES);
 }
 
-export function stocksForTheme(theme) {
+export async function stocksForTheme(theme, { fullMarket = true, scanLimit = 120 } = {}) {
   if (theme && theme !== "전체" && theme !== "ALL") {
     return (THEMES[theme] || []).map((s) => ({ theme, ...s }));
+  }
+  if (fullMarket) {
+    const all = await loadFullUniverse();
+    return selectScanUniverse(all, { limit: scanLimit }).map((r) => ({
+      ticker: r.ticker,
+      name: r.name,
+      theme: r.theme || r.market || "전체",
+    }));
   }
   const rows = [];
   for (const [themeName, stocks] of Object.entries(THEMES)) {
     for (const s of stocks) rows.push({ theme: themeName, ...s });
   }
   return rows;
+}
+
+export async function fullMarketSize() {
+  try {
+    const all = await loadFullUniverse();
+    return all.length;
+  } catch {
+    return 0;
+  }
 }

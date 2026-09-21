@@ -155,7 +155,7 @@
 
     <div class="row">
       <select id="theme">
-        <option value="전체">전체 테마</option>
+        <option value="전체">전체 종목 (유동성 상위)</option>
         <option>HBM/반도체</option>
         <option>2차전지</option>
         <option>AI/로봇</option>
@@ -185,6 +185,7 @@
       <div class="metric"><div class="k">오늘 추천</div><div class="v" id="mPick">-</div></div>
       <div class="metric"><div class="k">모드</div><div class="v" id="mMode">-</div></div>
       <div class="metric"><div class="k">데이터소스</div><div class="v" id="mProv">-</div></div>
+      <div class="metric"><div class="k">유니버스</div><div class="v" id="mUniv">-</div></div>
     </div>
 
     <h2>오늘 데이터 기반 골라준 종목</h2>
@@ -383,6 +384,10 @@
       const prov = data.providers || {};
       const on = ["naver", "aikstock", "kis", "dart", "krx"].filter((k) => prov[k]).join("+") || "naver";
       document.getElementById("mProv").textContent = `${on} / q:${data.quote_source || "-"} / d:${data.disclosure_source || "-"}`;
+      const univSize = data.universe_size ?? (data.picks || []).length;
+      const marketTotal = data.market_total ?? univSize;
+      document.getElementById("mUniv").textContent =
+        data.full_market ? `${univSize}/${marketTotal}` : String(univSize);
 
       latestPicks = data.picks || [];
       const cards = document.getElementById("cards");
