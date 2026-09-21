@@ -43,6 +43,7 @@ import {
   nextClockAfterSeek,
   shouldAutoFollowPlayback,
 } from "@/lib/video-clock";
+import { apiFetch } from "@/lib/api-client";
 import type { PlayerStats, Position } from "@/lib/types";
 import { WingLogo } from "./SiteHeader";
 import { HowToPanel, ExplainedButton } from "./UiGuide";
@@ -279,6 +280,42 @@ export function ScoutWorkbench() {
     setStatus("DVW 내보내기 완료");
   }
 
+  async function importDvwFile(file: File) {
+    try {
+      setStatus("DVW import 중…");
+      const form = new FormData();
+      form.append("dvw", file);
+      const res = await apiFetch("/api/scout/dvw", { method: "POST", body: form });
+      const data = (await res.json()) as {
+        error?: string;
+        session?: ScoutSession;
+        import?: { actionCount?: number; pointCount?: number; engine?: string; notes?: string[] };
+        pydatavolley?: { engine?: string; rows?: number; error?: string };
+      };
+      if (!res.ok) throw new Error(data.error ?? `import 실패 (${res.status})`);
+      if (!data.session) throw new Error("세션이 비어 있습니다.");
+      const next = {
+        ...data.session,
+        id: session.id,
+        matchId: session.matchId,
+      };
+      touch(next);
+      setRosters((r) => ({
+        ...r,
+        homeName: next.homeName || r.homeName,
+        awayName: next.awayName || r.awayName,
+      }));
+      const pyNote = data.pydatavolley?.engine
+        ? ` · py:${data.pydatavolley.engine}${data.pydatavolley.rows != null ? `(${data.pydatavolley.rows})` : ""}`
+        : "";
+      setStatus(
+        `DVW import OK · ${data.import?.engine ?? "parser"} · 액션 ${data.import?.actionCount ?? 0} · 포인트 ${data.import?.pointCount ?? 0}${pyNote}`,
+      );
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : "DVW import 실패");
+    }
+  }
+
   function sendFilteredToEditor(skillOnly?: boolean) {
     const duration = mediaDuration > 0 ? mediaDuration : DEFAULT_MATCH_VIDEO.approxDurationSec;
     const clips = filterActionsToClips(session.actions ?? [], {
@@ -413,15 +450,18 @@ export function ScoutWorkbench() {
       <section className="workbench-intro">
         <p className="eyebrow">LIVE SCOUT</p>
         <h1>포인트 스카우트</h1>
-        <p className="lede">영상 시계에 맞춰 득점·코딩을 남기면, 그 시각이 영상 컷이 됩니다.</p>
+        <p className="lede">
+          영상만 틀어도 기록이 안 생깁니다. 득점 날 때 오른쪽 <strong>킬/에이스/블로킹</strong>만
+          누르면 그 시각이 컷이 됩니다. 처음엔 «데모 스카우트»로 채워 보세요.
+        </p>
       </section>
 
       <HowToPanel
-        title="스카우트 사용법"
+        title="스카우트 — 최소 루프"
         steps={[
-          `① 전체 경기 세트(또는 업로드, ${MAX_MATCH_DURATION_LABEL})를 고릅니다.`,
-          "② 영상 시계에 맞춰 득점·프로 코딩을 남깁니다.",
-          "③ 저장 후 타임스탬프 컷 → 편집, 또는 전력분석으로 이동합니다.",
+          "① «데모 스카우트»로 타임스탬프가 어떻게 쌓이는지 보기",
+          "② 실전이면 영상 재생 → 득점할 때만 빠른 입력 버튼",
+          "③ 저장 → 영상편집으로 보내 하이라이트 만들기",
         ]}
       />
 
@@ -708,6 +748,18 @@ export function ScoutWorkbench() {
             <button type="button" className="btn ghost" onClick={exportDvw}>
               DVW 내보내기
             </button>
+            <label className="btn ghost file-btn">
+              DVW 가져오기
+              <input
+                type="file"
+                accept=".dvw,text/plain"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void importDvwFile(f);
+                  e.currentTarget.value = "";
+                }}
+              />
+            </label>
           </div>
           {(session.actions?.length ?? 0) > 0 ? (
             <ul className="scout-log code-log">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import { demoMatch } from "@/lib/demo-match";
 import { apiFetch } from "@/lib/api-client";
@@ -8,11 +8,22 @@ import { alignClipsToDuration } from "@/lib/clip-align";
 import {
   createPlayerMark,
   marksToClips,
-  summarizeMarks,
   type PlayerMark,
 } from "@/lib/player-marks";
+import {
+  COURT_SLOTS,
+  emptyLineup,
+  filledAssignments,
+  mergeLineupIntoMarks,
+  rotateLineup,
+  setLineupSlot,
+  updateLineupCoords,
+  type CourtSlot,
+  type LineupAssignment,
+} from "@/lib/court-lineup";
 import { DEFAULT_MATCH_VIDEO, listAvailableMatchVideos, MATCH_VIDEOS, MAX_MATCH_DURATION_LABEL, resolvePreferredMatchVideo, type MatchVideoOption } from "@/lib/match-videos";
-import { consumeEditorBridge } from "@/lib/storage";
+import { consumeEditorBridge, loadPlayerTrackState, playerTrackSourceKey, savePlayerTrackState } from "@/lib/storage";
+import { listStaticTrackPins, resolveAllFollowPins, summarizePlayerTracks } from "@/lib/track-overlay";
 import type { ClipKind, PlayerStats, VideoClipMarker } from "@/lib/types";
 import { WingLogo } from "./SiteHeader";
 import { HowToPanel } from "./UiGuide";
@@ -61,7 +72,11 @@ export function VideoEditorWorkbench() {
   const [file, setFile] = useState<File | null>(null);
   const [clips, setClips] = useState<VideoClipMarker[]>(() => cloneDemoClips());
   const [marks, setMarks] = useState<PlayerMark[]>([]);
+  const [lineup, setLineup] = useState<Array<LineupAssignment | null>>(() => emptyLineup());
+  const [activeSlot, setActiveSlot] = useState<CourtSlot>(4);
   const [markMode, setMarkMode] = useState(false);
+  const [playheadSec, setPlayheadSec] = useState(0);
+  const [showTrackOverlay, setShowTrackOverlay] = useState(true);
   const [customNumber, setCustomNumber] = useState("");
   const [customName, setCustomName] = useState("");
   const [mediaDuration, setMediaDuration] = useState(DEFAULT_MATCH_VIDEO.approxDurationSec);
@@ -120,12 +135,65 @@ export function VideoEditorWorkbench() {
     };
   }, [customName, customNumber, selectedPlayer]);
 
-  const markSummary = useMemo(() => summarizeMarks(marks), [marks]);
+  const trackSummary = useMemo(() => summarizePlayerTracks(marks), [marks]);
+
+  const staticPins = useMemo(() => listStaticTrackPins(marks), [marks]);
+
+  const followPins = useMemo(
+    () => resolveAllFollowPins(marks, playheadSec, { durationSec: mediaDuration }),
+    [marks, playheadSec, mediaDuration],
+  );
+
+  const trackSourceKey = useMemo(
+    () => playerTrackSourceKey({ matchVideoId: file ? null : matchVideoId, fileName: file?.name }),
+    [file, matchVideoId],
+  );
+
+  const skipTrackSaveRef = useRef(false);
+
+  // Restore lineup + tracks when the match source changes (before save effect).
+  useEffect(() => {
+    if (!trackSourceKey) return;
+    skipTrackSaveRef.current = true;
+    const saved = loadPlayerTrackState(trackSourceKey);
+    setMarks(saved.marks as PlayerMark[]);
+    setLineup(saved.lineup as Array<LineupAssignment | null>);
+    const filled = saved.lineup.filter(Boolean).length;
+    if (saved.marks.length || filled) {
+      setStatus(
+        `저장 로드 · 포지션 ${filled}/6 · 추적핀 ${saved.marks.filter((m) => typeof m.xNorm === "number").length}개`,
+      );
+    }
+  }, [trackSourceKey]);
+
+  useEffect(() => {
+    if (!trackSourceKey) return;
+    if (skipTrackSaveRef.current) {
+      skipTrackSaveRef.current = false;
+      return;
+    }
+    savePlayerTrackState(trackSourceKey, { marks, lineup });
+  }, [marks, lineup, trackSourceKey]);
 
   const validClips = useMemo(
     () => alignClipsToDuration(clips, mediaDuration),
     [clips, mediaDuration],
   );
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const sync = () => setPlayheadSec(video.currentTime);
+    video.addEventListener("timeupdate", sync);
+    video.addEventListener("seeked", sync);
+    video.addEventListener("play", sync);
+    sync();
+    return () => {
+      video.removeEventListener("timeupdate", sync);
+      video.removeEventListener("seeked", sync);
+      video.removeEventListener("play", sync);
+    };
+  }, [previewUrl]);
 
   const totalSeconds = useMemo(
     () => validClips.reduce((sum, c) => sum + (c.endSec - c.startSec), 0),
@@ -168,6 +236,43 @@ export function VideoEditorWorkbench() {
     setClips((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
   }
 
+  function applyLineupToTracks(nextLineup = lineup) {
+    const t = videoRef.current?.currentTime;
+    const timeSec = typeof t === "number" && Number.isFinite(t) ? t : playheadSec;
+    setMarks((prev) => mergeLineupIntoMarks(prev, nextLineup, timeSec));
+    setPlayheadSec(timeSec);
+    const n = filledAssignments(nextLineup).length;
+    setError(null);
+    setStatus(
+      n > 0
+        ? `포지션 ${n}/6 적용 · 재생 시 선수별 핀 추적 (필요하면 보정 클릭)`
+        : "포지션이 비어 있습니다. 코트 슬롯에 선수를 배치하세요.",
+    );
+  }
+
+  function assignPlayerToSlot(slot: CourtSlot) {
+    const next = setLineupSlot(
+      lineup,
+      {
+        slot,
+        playerNumber: activeMarkTarget.number,
+        playerName: activeMarkTarget.name,
+        playerId: activeMarkTarget.id,
+      },
+      slot,
+    );
+    setLineup(next);
+    setActiveSlot(slot);
+    setSelectedNumber(activeMarkTarget.number);
+    applyLineupToTracks(next);
+  }
+
+  function clearSlot(slot: CourtSlot) {
+    const next = setLineupSlot(lineup, null, slot);
+    setLineup(next);
+    applyLineupToTracks(next);
+  }
+
   function addMarkAtTime(opts?: { xNorm?: number; yNorm?: number; timeSec?: number }) {
     const video = videoRef.current;
     const timeSec =
@@ -184,10 +289,23 @@ export function VideoEditorWorkbench() {
       xNorm: opts?.xNorm,
       yNorm: opts?.yNorm,
     });
-    setMarks((prev) => [...prev, mark].sort((a, b) => a.timeSec - b.timeSec));
+    let nextLineup = lineup;
+    if (typeof opts?.xNorm === "number" && typeof opts?.yNorm === "number") {
+      nextLineup = updateLineupCoords(lineup, activeMarkTarget.number, opts.xNorm, opts.yNorm);
+      setLineup(nextLineup);
+    }
+    setMarks((prev) => {
+      const withNew = [...prev, mark].sort((a, b) => a.timeSec - b.timeSec);
+      return typeof opts?.xNorm === "number"
+        ? mergeLineupIntoMarks(withNew, nextLineup, timeSec)
+        : withNew;
+    });
+    setPlayheadSec(mark.timeSec);
     setError(null);
     setStatus(
-      `#${mark.playerNumber} ${mark.playerName} 마크 @ ${mark.timeSec.toFixed(1)}s (총 ${marks.length + 1}개)`,
+      typeof mark.xNorm === "number"
+        ? `#${mark.playerNumber} ${mark.playerName} 보정핀 @ ${mark.timeSec.toFixed(1)}s · 포지션 경로에 반영`
+        : `#${mark.playerNumber} ${mark.playerName} 마크 @ ${mark.timeSec.toFixed(1)}s`,
     );
   }
 
@@ -201,7 +319,7 @@ export function VideoEditorWorkbench() {
 
   function buildClipsFromMarks(onlySelected = false) {
     if (!marks.length) {
-      setError("찍은 선수 마크가 없습니다. 번호 찍기 모드에서 영상을 클릭하거나 ‘지금 시각에 찍기’를 누르세요.");
+      setError("포지션을 배치하거나 보정 클릭으로 마크를 만든 뒤 컷을 생성하세요.");
       return;
     }
     const next = marksToClips(marks, mediaDuration, {
@@ -219,15 +337,20 @@ export function VideoEditorWorkbench() {
     setStatus(
       onlySelected
         ? `#${activeMarkTarget.number} 마크 ${next.length}클립 생성 — 하이라이트 생성 가능`
-        : `찍은 선수 ${markSummary.length}명 → ${next.length}클립 생성 — 하이라이트 생성 가능`,
+        : `추적 선수 ${trackSummary.length}명 → ${next.length}클립 생성 — 하이라이트 생성 가능`,
     );
   }
 
   function seekToMark(mark: PlayerMark) {
     const video = videoRef.current;
+    setPlayheadSec(mark.timeSec);
     if (!video) return;
-    video.currentTime = mark.timeSec;
-    void video.play().catch(() => undefined);
+    try {
+      video.currentTime = mark.timeSec;
+      void video.play().catch(() => undefined);
+    } catch {
+      // Media may be unavailable in some environments; pin still updates via playheadSec.
+    }
   }
 
   async function autoDetectScenes() {
@@ -327,20 +450,25 @@ export function VideoEditorWorkbench() {
     }
   }
 
-  async function renderHighlights() {
+  async function renderHighlights(clipsOverride?: VideoClipMarker[], videoFile?: File | null) {
+    const sourceClips = clipsOverride ?? clips;
+    const usable = sourceClips.filter((c) => c.endSec > c.startSec);
+    const videoForRender = videoFile === undefined ? file : videoFile;
     try {
       setBusy(true);
       setError(null);
-      setStatus(null);
+      setStatus("하이라이트 렌더 중…");
       if (downloadUrl) URL.revokeObjectURL(downloadUrl);
 
-      if (validClips.length === 0) {
-        throw new Error("유효한 클립이 없습니다. 종료 시간이 시작보다 커야 합니다.");
+      if (usable.length === 0) {
+        throw new Error(
+          "자를 구간(클립)이 없습니다. «데모로 한 번 돌려보기»를 누르거나, 아래 클립 시작·종료 시간을 넣으세요.",
+        );
       }
 
       const form = new FormData();
-      if (file) form.append("video", file);
-      form.append("clips", JSON.stringify(validClips));
+      if (videoForRender) form.append("video", videoForRender);
+      form.append("clips", JSON.stringify(usable));
 
       const res = await apiFetch("/api/video/highlights", {
         method: "POST",
@@ -357,9 +485,9 @@ export function VideoEditorWorkbench() {
       viewingResultRef.current = true;
       setDownloadUrl(url);
       setPreviewUrl(url);
-      const playerTag = validClips.find((c) => c.playerNumber)?.playerNumber;
+      const playerTag = usable.find((c) => c.playerNumber)?.playerNumber;
       setStatus(
-        `하이라이트 ${validClips.length}클립 생성 완료 · ${(blob.size / 1024).toFixed(0)}KB${
+        `하이라이트 ${usable.length}클립 생성 완료 · ${(blob.size / 1024).toFixed(0)}KB${
           playerTag ? ` · #${playerTag}` : ""
         } · 원본 타임라인 ${mediaDuration.toFixed(1)}s 유지`,
       );
@@ -368,6 +496,23 @@ export function VideoEditorWorkbench() {
     } finally {
       setBusy(false);
     }
+  }
+
+  /** Shortest path: sample video + demo clip times → one highlight file. */
+  async function runDemoHighlightOnce() {
+    const demo = cloneDemoClips();
+    viewingResultRef.current = false;
+    setClips(demo);
+    setMarks([]);
+    setLineup(emptyLineup());
+    setMarkMode(false);
+    setFile(null);
+    setMatchVideoId(DEFAULT_MATCH_VIDEO.id);
+    setPreviewUrl(DEFAULT_MATCH_VIDEO.src);
+    setMediaDuration(DEFAULT_MATCH_VIDEO.approxDurationSec);
+    setError(null);
+    setStatus("데모 클립으로 하이라이트 생성 중…");
+    await renderHighlights(demo, null);
   }
 
   const locked = busy || detecting || tracking;
@@ -386,26 +531,41 @@ export function VideoEditorWorkbench() {
         <p className="eyebrow">HIGHLIGHT DESK</p>
         <h1>경기 영상 하이라이트 편집</h1>
         <p className="lede">
-          등번호가 안 보이면 OCR 대신 <strong>번호를 직접 찍어</strong> 선수에 연결한 뒤, 찍힌
-          선수 컷으로 하이라이트를 만드세요.
+          영상만 올리면 아무 일도 안 됩니다. <strong>자를 시간(클립)</strong>이 있어야{" "}
+          <strong>하이라이트 생성</strong>이 돌아갑니다.
         </p>
       </section>
 
-      <HowToPanel
-        title="긴 경기 영상"
-        steps={[
-          `① 전체 세트(또는 업로드, ${MAX_MATCH_DURATION_LABEL})를 고릅니다.`,
-          "② 스카우트 스탬프·번호 찍기로 컷을 만듭니다 (자동 감지/OCR은 짧은 영상용).",
-          "③ 하이라이트 생성 시 해당 구간만 서버로 보냅니다.",
-        ]}
-      />
+      <aside className="first-run-panel" aria-label="지금 해볼 것">
+        <h2>지금 해볼 것 (30초)</h2>
+        <ol>
+          <li>
+            아래 <strong>데모로 한 번 돌려보기</strong>를 누릅니다 → 샘플 컷 MP4가 나옵니다.
+          </li>
+          <li>
+            내 영상을 쓰려면: 업로드 → 아래 클립의 시작·종료만 내 시간에 맞게 고침 →{" "}
+            <strong>하이라이트 생성</strong>.
+          </li>
+          <li>
+            선수 따라가기는 나중에: 오른쪽 코트에 선수 배치 → 포지션 적용 → 추적 선수 컷 만들기.
+          </li>
+        </ol>
+        <button
+          type="button"
+          className="btn primary"
+          disabled={locked}
+          onClick={() => void runDemoHighlightOnce()}
+        >
+          {busy ? "렌더 중…" : "데모로 한 번 돌려보기"}
+        </button>
+      </aside>
 
       <HowToPanel
-        title="번호가 안 보일 때"
+        title="그다음 (선택)"
         steps={[
-          "① 선수 선택(또는 번호·이름 직접 입력) → ‘번호 찍기’ 켜기",
-          "② 영상에서 그 선수가 보일 때 클릭(또는 ‘지금 시각에 찍기’)",
-          "③ ‘찍은 선수 컷 만들기’ → 하이라이트 생성",
+          `내 영상 업로드 (${MAX_MATCH_DURATION_LABEL}) 후 클립 시간만 맞추기`,
+          "스카우트에서 득점 찍으면 타임스탬프 컷이 자동으로 생김",
+          "포지션 P1–P6 배치 → 보정 클릭 → 선수별 추적 (고급)",
         ]}
       />
 
@@ -430,13 +590,55 @@ export function VideoEditorWorkbench() {
                 }
               }}
             />
+            {showTrackOverlay && (staticPins.length > 0 || followPins.length > 0) ? (
+              <div className="track-overlay" aria-hidden>
+                {staticPins.map((pin) => (
+                  <span
+                    key={pin.id}
+                    className="track-pin is-static"
+                    style={
+                      {
+                        left: `${pin.xNorm * 100}%`,
+                        top: `${pin.yNorm * 100}%`,
+                        opacity: pin.opacity,
+                        "--track-color": pin.color ?? "var(--magenta)",
+                      } as CSSProperties
+                    }
+                    title={`#${pin.playerNumber} @ ${pin.timeSec.toFixed(1)}s`}
+                  >
+                    <span className="track-pin-dot" />
+                  </span>
+                ))}
+                {followPins.map((pin) => (
+                  <span
+                    key={pin.id}
+                    className={`track-pin is-follow mode-${pin.mode}`}
+                    style={
+                      {
+                        left: `${pin.xNorm * 100}%`,
+                        top: `${pin.yNorm * 100}%`,
+                        opacity: pin.opacity,
+                        "--track-color": pin.color ?? "var(--magenta)",
+                      } as CSSProperties
+                    }
+                  >
+                    <span className="track-pin-ring" />
+                    <span className="track-pin-badge">
+                      #{pin.playerNumber}
+                      <small>{pin.playerName}</small>
+                    </span>
+                  </span>
+                ))}
+              </div>
+            ) : null}
             <div className="video-badge">
               <WingLogo size={28} />
               <span>FAV CUT</span>
             </div>
             {markMode ? (
               <p className="mark-mode-hint">
-                찍기 ON · 클릭 시 #{activeMarkTarget.number} {activeMarkTarget.name}
+                보정 ON · 클릭 시 #{activeMarkTarget.number} {activeMarkTarget.name}
+                {followPins.length > 0 ? ` · 추적 ${followPins.length}명` : ""}
               </p>
             ) : null}
           </div>
@@ -456,7 +658,6 @@ export function VideoEditorWorkbench() {
                   setMatchVideoId(hit.id);
                   setPreviewUrl(hit.src);
                   setMediaDuration(hit.approxDurationSec);
-                  setMarks([]);
                   setError(null);
                   setStatus(`${hit.label} 로드 · 원본 ${hit.sourceFile}`);
                 }}
@@ -480,7 +681,9 @@ export function VideoEditorWorkbench() {
                   viewingResultRef.current = false;
                   if (next) {
                     setPreviewUrl(URL.createObjectURL(next));
-                    setStatus(`업로드: ${next.name} · ${MAX_MATCH_DURATION_LABEL}까지 지원`);
+                    setStatus(
+                      `업로드: ${next.name} · 아래 클립 시작·종료를 맞춘 뒤 «하이라이트 생성»을 누르세요`,
+                    );
                   } else {
                     setPreviewUrl(DEFAULT_MATCH_VIDEO.src);
                     setMatchVideoId(DEFAULT_MATCH_VIDEO.id);
@@ -500,6 +703,82 @@ export function VideoEditorWorkbench() {
         </div>
 
         <div className="clip-pane">
+          <div className="court-lineup-panel">
+            <div className="court-lineup-head">
+              <strong>포지션 설정</strong>
+              <span className="hint">
+                선택 선수 #{activeMarkTarget.number} {activeMarkTarget.name} · 슬롯 클릭으로 배치
+              </span>
+            </div>
+            <div className="court-lineup-grid" role="group" aria-label="코트 포지션 P1–P6">
+              {COURT_SLOTS.map((slot) => {
+                const assigned = lineup[slot.slot - 1];
+                const isActive = activeSlot === slot.slot;
+                return (
+                  <button
+                    key={slot.slot}
+                    type="button"
+                    className={`court-slot ${isActive ? "is-active" : ""} ${assigned ? "is-filled" : ""}`}
+                    onClick={() => assignPlayerToSlot(slot.slot)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      clearSlot(slot.slot);
+                    }}
+                    title={
+                      assigned
+                        ? `${slot.label} · #${assigned.playerNumber} ${assigned.playerName} (우클릭: 비우기)`
+                        : `${slot.label}에 #${activeMarkTarget.number} 배치`
+                    }
+                  >
+                    <span className="court-slot-label">{slot.shortLabel}</span>
+                    {assigned ? (
+                      <span className="court-slot-player">
+                        #{assigned.playerNumber}
+                        <small>{assigned.playerName}</small>
+                      </span>
+                    ) : (
+                      <span className="court-slot-empty">비움</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="court-lineup-actions">
+              <button
+                type="button"
+                className="btn ghost"
+                disabled={locked}
+                onClick={() => {
+                  const next = rotateLineup(lineup);
+                  setLineup(next);
+                  applyLineupToTracks(next);
+                }}
+              >
+                로테 +1
+              </button>
+              <button
+                type="button"
+                className="btn primary"
+                disabled={locked || filledAssignments(lineup).length === 0}
+                onClick={() => applyLineupToTracks()}
+              >
+                포지션 적용
+              </button>
+              <button
+                type="button"
+                className="btn ghost danger"
+                disabled={locked || filledAssignments(lineup).length === 0}
+                onClick={() => {
+                  const next = emptyLineup();
+                  setLineup(next);
+                  applyLineupToTracks(next);
+                }}
+              >
+                포지션 초기화
+              </button>
+            </div>
+          </div>
+
           <div className="player-track-bar">
             <label>
               로스터 선수
@@ -509,7 +788,7 @@ export function VideoEditorWorkbench() {
                   setSelectedNumber(Number(e.target.value));
                   setCustomNumber("");
                 }}
-                aria-label="트래킹할 선수"
+                aria-label="배치할 선수"
               >
                 {ROSTER.map((p) => (
                   <option key={p.id} value={p.number}>
@@ -545,11 +824,18 @@ export function VideoEditorWorkbench() {
               className={`btn ghost ${markMode ? "is-active" : ""}`}
               disabled={locked}
               onClick={() => setMarkMode((v) => !v)}
+              title="영상 클릭으로 위치 보정"
             >
-              {markMode ? "번호 찍기 ON" : "번호 찍기"}
+              {markMode ? "보정 ON" : "위치 보정"}
             </button>
-            <button type="button" className="btn ghost" disabled={locked} onClick={() => addMarkAtTime()}>
-              지금 시각에 #{activeMarkTarget.number} 찍기
+            <button
+              type="button"
+              className={`btn ghost ${showTrackOverlay ? "is-active" : ""}`}
+              disabled={locked || staticPins.length === 0}
+              onClick={() => setShowTrackOverlay((v) => !v)}
+              title="위치 핀 오버레이 표시"
+            >
+              {showTrackOverlay ? "추적 핀 ON" : "추적 핀"}
             </button>
             <button
               type="button"
@@ -557,7 +843,7 @@ export function VideoEditorWorkbench() {
               disabled={locked || marks.length === 0}
               onClick={() => buildClipsFromMarks(false)}
             >
-              찍은 선수 컷 만들기
+              추적 선수 컷 만들기
             </button>
             <button
               type="button"
@@ -578,16 +864,23 @@ export function VideoEditorWorkbench() {
             </button>
           </div>
 
-          {marks.length > 0 ? (
+          {marks.length > 0 || filledAssignments(lineup).length > 0 ? (
             <div className="mark-panel">
               <div className="mark-summary">
-                {markSummary.map((row) => (
-                  <span key={row.playerNumber}>
-                    #{row.playerNumber} {row.playerName} · {row.count}
+                {trackSummary.map((row) => (
+                  <span key={row.playerNumber} className={row.ready ? "is-ready" : "is-building"}>
+                    #{row.playerNumber} {row.playerName} · {row.pinCount}핀
                   </span>
                 ))}
-                <button type="button" className="btn ghost danger" onClick={() => setMarks([])}>
-                  마크 전체 삭제
+                <button
+                  type="button"
+                  className="btn ghost danger"
+                  onClick={() => {
+                    setMarks([]);
+                    setLineup(emptyLineup());
+                  }}
+                >
+                  추적 전체 삭제
                 </button>
               </div>
               <ul className="mark-list">
@@ -595,7 +888,11 @@ export function VideoEditorWorkbench() {
                   <li key={mark.id}>
                     <button type="button" className="mark-jump" onClick={() => seekToMark(mark)}>
                       #{mark.playerNumber} {mark.playerName} @ {mark.timeSec.toFixed(1)}s
-                      {typeof mark.xNorm === "number" ? " · 위치핀" : ""}
+                      {mark.note?.startsWith("lineup:")
+                        ? ` · ${mark.note.replace("lineup:", "")}`
+                        : typeof mark.xNorm === "number"
+                          ? " · 보정"
+                          : ""}
                     </button>
                     <button
                       type="button"
@@ -610,8 +907,8 @@ export function VideoEditorWorkbench() {
             </div>
           ) : (
             <p className="hint mark-empty">
-              등번호가 안 보이면 OCR 대신 번호를 직접 찍으세요. 현재 대상: #
-              {activeMarkTarget.number} {activeMarkTarget.name}
+              위 코트에서 포지션을 배치하세요. 현재 대상: #{activeMarkTarget.number}{" "}
+              {activeMarkTarget.name}
             </p>
           )}
 
@@ -626,6 +923,7 @@ export function VideoEditorWorkbench() {
                 viewingResultRef.current = false;
                 setClips(cloneDemoClips());
                 setMarks([]);
+                setLineup(emptyLineup());
                 setMarkMode(false);
                 setFile(null);
                 setMatchVideoId(DEFAULT_MATCH_VIDEO.id);
@@ -643,7 +941,7 @@ export function VideoEditorWorkbench() {
               type="button"
               className="btn primary"
               disabled={locked || validClips.length === 0}
-              onClick={renderHighlights}
+              onClick={() => void renderHighlights()}
             >
               {busy ? "렌더 중…" : "하이라이트 생성"}
             </button>

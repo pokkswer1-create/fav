@@ -204,6 +204,35 @@ export async function runJerseyOcr(
   jerseyNumber: number,
   intervalSec = 0.5,
 ): Promise<{ durationSec: number; detections: JerseyDetection[]; engine: string }> {
+  // Prefer Roboflow when configured — better on sports jerseys than plain Tesseract.
+  if (process.env.ROBOFLOW_API_KEY?.trim()) {
+    try {
+      const script = path.join(process.cwd(), "scripts", "roboflow_jersey.py");
+      const { stdout, code } = await runCapture(
+        "python3",
+        [script, videoPath, String(jerseyNumber), "--interval", String(Math.max(1.2, intervalSec))],
+        Math.min(300_000, ocrTimeoutForInterval(intervalSec) + 60_000),
+      );
+      if (code === 0) {
+        const parsed = JSON.parse(stdout) as {
+          error?: string;
+          durationSec?: number;
+          detections?: JerseyDetection[];
+          engine?: string;
+        };
+        if (!parsed.error) {
+          return {
+            durationSec: parsed.durationSec ?? 0,
+            detections: parsed.detections ?? [],
+            engine: parsed.engine ?? "roboflow",
+          };
+        }
+      }
+    } catch {
+      // fall through to local OCR
+    }
+  }
+
   const script = path.join(process.cwd(), "scripts", "track_jersey.py");
   const { stdout, stderr, code } = await runCapture(
     "python3",

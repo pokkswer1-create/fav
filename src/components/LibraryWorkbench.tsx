@@ -37,6 +37,15 @@ export function LibraryWorkbench() {
   const [scouts, setScouts] = useState<ScoutSession[]>([]);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [fivbQ, setFivbQ] = useState("VNL");
+  const [fivbTournaments, setFivbTournaments] = useState<
+    Array<{ no: number; name: string; code: string; startDate: string }>
+  >([]);
+  const [fivbMatches, setFivbMatches] = useState<
+    Array<{ no: number; teamA?: string; teamB?: string; date?: string }>
+  >([]);
+  const [fivbStats, setFivbStats] = useState<Array<Record<string, string>>>([]);
+  const [integrations, setIntegrations] = useState<string | null>(null);
 
   function refresh() {
     setMatches(listStoredMatches());
@@ -47,8 +56,83 @@ export function LibraryWorkbench() {
     void (async () => {
       await restoreLibraryFromIdb();
       refresh();
+      try {
+        const res = await apiFetch("/api/integrations");
+        const data = (await res.json()) as {
+          integrations?: {
+            roboflow?: { configured?: boolean; model?: string };
+            fivbVis?: { configured?: boolean };
+            pydatavolley?: { note?: string };
+          };
+        };
+        if (res.ok && data.integrations) {
+          const r = data.integrations.roboflow;
+          setIntegrations(
+            `Roboflow ${r?.configured ? "ON" : "OFF"} (${r?.model ?? "-"}) · FIVB VIS · DVW/pydatavolley`,
+          );
+        }
+      } catch {
+        // optional
+      }
     })();
   }, []);
+
+  async function searchFivb() {
+    try {
+      setBusy(true);
+      setFivbMatches([]);
+      setFivbStats([]);
+      const res = await apiFetch(`/api/fivb?q=${encodeURIComponent(fivbQ || "VNL")}`);
+      const data = (await res.json()) as {
+        error?: string;
+        tournaments?: Array<{ no: number; name: string; code: string; startDate: string }>;
+      };
+      if (!res.ok) throw new Error(data.error ?? "FIVB 조회 실패");
+      setFivbTournaments(data.tournaments ?? []);
+      setStatus(`FIVB 토너먼트 ${data.tournaments?.length ?? 0}건`);
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : "FIVB 조회 실패");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openFivbTournament(no: number) {
+    try {
+      setBusy(true);
+      setFivbStats([]);
+      const res = await apiFetch(`/api/fivb?tournament=${no}`);
+      const data = (await res.json()) as {
+        error?: string;
+        matches?: Array<{ no: number; teamA?: string; teamB?: string; date?: string }>;
+      };
+      if (!res.ok) throw new Error(data.error ?? "경기 목록 실패");
+      setFivbMatches(data.matches ?? []);
+      setStatus(`토너먼트 #${no} 경기 ${data.matches?.length ?? 0}건`);
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : "경기 목록 실패");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openFivbMatch(no: number) {
+    try {
+      setBusy(true);
+      const res = await apiFetch(`/api/fivb?match=${no}`);
+      const data = (await res.json()) as {
+        error?: string;
+        stats?: { playerRows?: Array<Record<string, string>> };
+      };
+      if (!res.ok) throw new Error(data.error ?? "스탯 조회 실패");
+      setFivbStats(data.stats?.playerRows ?? []);
+      setStatus(`매치 #${no} 스탯 행 ${data.stats?.playerRows?.length ?? 0}`);
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : "스탯 조회 실패");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   function openAnalyze(id: string) {
     router.push(`/analyze?match=${encodeURIComponent(id)}`);
@@ -148,7 +232,50 @@ export function LibraryWorkbench() {
         <h1>경기 보관함</h1>
         <p className="lede">
           localStorage + IndexedDB + JSON 내보내기/가져오기 + 서버 백업으로 기기 간 이동이 가능합니다.
+          {integrations ? ` · 연동: ${integrations}` : ""}
         </p>
+      </section>
+
+      <section className="fivb-panel">
+        <h2>FIVB VIS · 공개 대회 스탯</h2>
+        <p className="hint">공식 VIS에서 토너먼트/경기/선수 스탯을 조회합니다 (읽기 전용).</p>
+        <div className="pane-actions">
+          <label>
+            검색
+            <input value={fivbQ} onChange={(e) => setFivbQ(e.target.value)} placeholder="VNL" />
+          </label>
+          <button type="button" className="btn primary" disabled={busy} onClick={() => void searchFivb()}>
+            FIVB 검색
+          </button>
+        </div>
+        {fivbTournaments.length > 0 ? (
+          <ul className="mark-list">
+            {fivbTournaments.slice(0, 12).map((t) => (
+              <li key={t.no}>
+                <button type="button" className="mark-jump" onClick={() => void openFivbTournament(t.no)}>
+                  #{t.no} {t.name} · {t.startDate || "날짜없음"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {fivbMatches.length > 0 ? (
+          <ul className="mark-list">
+            {fivbMatches.slice(0, 15).map((m) => (
+              <li key={m.no}>
+                <button type="button" className="mark-jump" onClick={() => void openFivbMatch(m.no)}>
+                  경기 #{m.no} {m.teamA ?? "?"} vs {m.teamB ?? "?"} · {m.date ?? ""}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {fivbStats.length > 0 ? (
+          <div className="fivb-stats">
+            <p className="hint">선수 스탯 {fivbStats.length}행</p>
+            <pre className="fivb-stats-pre">{JSON.stringify(fivbStats.slice(0, 12), null, 2)}</pre>
+          </div>
+        ) : null}
       </section>
 
       <div className="pane-actions">
