@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>째깍 — 온라인 타이머</title>
+  <meta name="description" content="설정하고 시작하세요. 회원가입 없는 심플 온라인 카운트다운 타이머." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #14201a;
+      --fog: #e8f0ea;
+      --leaf: #1f6b4a;
+      --leaf-deep: #0f3d2c;
+      --amber: #e0a04a;
+      --amber-hot: #f0b85c;
+      --mute: #5c7266;
+      --glass: rgba(232, 240, 234, 0.08);
+      --line: rgba(232, 240, 234, 0.18);
+      --danger: #d66a5a;
+      --ring-track: rgba(232, 240, 234, 0.12);
+      --ad-bg: rgba(20, 32, 26, 0.45);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: "IBM Plex Sans KR", sans-serif;
+      color: var(--fog);
+      background:
+        radial-gradient(1200px 700px at 80% -10%, rgba(224, 160, 74, 0.18), transparent 55%),
+        radial-gradient(900px 600px at -10% 100%, rgba(31, 107, 74, 0.45), transparent 50%),
+        linear-gradient(165deg, #0b1611 0%, #14201a 45%, #0f3d2c 100%);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    .stage {
+      width: min(1120px, 100%);
+      margin: 0 auto;
+      padding: 28px 20px 48px;
+      display: grid;
+      grid-template-columns: 160px 1fr 160px;
+      gap: 20px;
+      align-items: start;
+    }
+
+    .ad {
+      min-height: 280px;
+      border: 1px dashed var(--line);
+      background: var(--ad-bg);
+      color: var(--mute);
+      display: grid;
+      place-items: center;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      text-align: center;
+      padding: 12px;
+      position: sticky;
+      top: 20px;
+    }
+    .ad.top {
+      grid-column: 1 / -1;
+      min-height: 90px;
+      position: static;
+      margin-bottom: 4px;
+    }
+    .ad.bottom {
+      grid-column: 1 / -1;
+      min-height: 100px;
+      position: static;
+      margin-top: 8px;
+    }
+
+    .main {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 18px;
+      padding: 8px 0 24px;
+    }
+
+    .brand {
+      font-family: "Outfit", "IBM Plex Sans KR", sans-serif;
+      font-weight: 800;
+      font-size: clamp(3.2rem, 9vw, 5.6rem);
+      letter-spacing: -0.04em;
+      line-height: 0.95;
+      margin: 0;
+      background: linear-gradient(120deg, var(--fog) 20%, var(--amber-hot) 80%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      animation: brandIn 0.8s ease both;
+    }
+    .tag {
+      margin: -6px 0 8px;
+      color: var(--mute);
+      font-size: 1rem;
+      animation: fadeUp 0.7s 0.1s ease both;
+    }
+
+    .ring-wrap {
+      position: relative;
+      width: min(360px, 78vw);
+      aspect-ratio: 1;
+      margin: 8px 0 4px;
+      animation: fadeUp 0.8s 0.15s ease both;
+    }
+    .ring-wrap svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+    .ring-track { fill: none; stroke: var(--ring-track); stroke-width: 10; }
+    .ring-prog {
+      fill: none;
+      stroke: url(#ringGrad);
+      stroke-width: 10;
+      stroke-linecap: round;
+      stroke-dasharray: 1000;
+      stroke-dashoffset: 1000;
+      transition: stroke-dashoffset 0.2s linear;
+      filter: drop-shadow(0 0 10px rgba(224, 160, 74, 0.35));
+    }
+    .time-face {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      transform: none;
+    }
+    .time-face strong {
+      font-family: "Outfit", sans-serif;
+      font-weight: 700;
+      font-size: clamp(2.6rem, 8vw, 3.8rem);
+      letter-spacing: 0.02em;
+      font-variant-numeric: tabular-nums;
+    }
+    .time-face span {
+      display: block;
+      margin-top: 4px;
+      color: var(--mute);
+      font-size: 0.92rem;
+    }
+    .ring-wrap.running .time-face strong { animation: tickPulse 1s ease-in-out infinite; }
+
+    .controls {
+      width: min(520px, 100%);
+      display: grid;
+      gap: 14px;
+      animation: fadeUp 0.8s 0.22s ease both;
+    }
+    .fields {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+    label {
+      display: grid;
+      gap: 6px;
+      text-align: left;
+      font-size: 0.78rem;
+      color: var(--mute);
+    }
+    input, select {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: var(--glass);
+      color: var(--fog);
+      border-radius: 10px;
+      padding: 12px 10px;
+      font: inherit;
+      font-size: 1.05rem;
+      outline: none;
+    }
+    input:focus, select:focus { border-color: var(--amber); }
+    .name-row { display: grid; grid-template-columns: 1.4fr 1fr; gap: 10px; }
+
+    .presets {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+    }
+    .presets button {
+      border: 1px solid var(--line);
+      background: transparent;
+      color: var(--fog);
+      border-radius: 999px;
+      padding: 8px 12px;
+      font: inherit;
+      font-size: 0.88rem;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s, transform 0.15s;
+    }
+    .presets button:hover,
+    .presets button.active {
+      background: rgba(224, 160, 74, 0.16);
+      border-color: var(--amber);
+      transform: translateY(-1px);
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      margin-top: 4px;
+    }
+    .actions button {
+      border: 0;
+      border-radius: 999px;
+      padding: 14px 28px;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.15s, filter 0.15s;
+    }
+    .actions button:hover { transform: translateY(-1px); filter: brightness(1.05); }
+    .actions button:active { transform: translateY(0); }
+    #btnStart { background: linear-gradient(135deg, var(--amber), #c9842f); color: var(--ink); min-width: 140px; }
+    #btnPause { background: rgba(232, 240, 234, 0.12); color: var(--fog); }
+    #btnReset { background: transparent; color: var(--mute); border: 1px solid var(--line) !important; }
+
+    .foot {
+      grid-column: 1 / -1;
+      text-align: center;
+      color: var(--mute);
+      font-size: 0.8rem;
+      margin-top: 8px;
+    }
+
+    @keyframes brandIn {
+      from { opacity: 0; transform: translateY(12px) scale(0.98); }
+      to { opacity: 1; transform: none; }
+    }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(14px); }
+      to { opacity: 1; transform: none; }
+    }
+    @keyframes tickPulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.82; }
+    }
+
+    @media (max-width: 860px) {
+      .stage { grid-template-columns: 1fr; }
+      .ad.side { display: none; }
+      .name-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div class="ad top" aria-label="광고 영역">광고 영역 · AdSense</div>
+    <aside class="ad side" aria-label="광고 영역">광고<br/>160×600</aside>
+
+    <main class="main">
+      <h1 class="brand">째깍</h1>
+      <p class="tag">설정하고 시작하세요. 끝이면 알려드릴게요.</p>
+
+      <div class="ring-wrap" id="ringWrap">
+        <svg viewBox="0 0 200 200" aria-hidden="true">
+          <defs>
+            <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#e0a04a" />
+              <stop offset="100%" stop-color="#2f9d6a" />
+            </linearGradient>
+          </defs>
+          <circle class="ring-track" cx="100" cy="100" r="84" />
+          <circle class="ring-prog" id="ringProg" cx="100" cy="100" r="84" pathLength="1000" />
+        </svg>
+        <div class="time-face">
+          <div>
+            <strong id="display">00:05:00</strong>
+            <span id="labelFace">집중 타이머</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <div class="fields">
+          <label>시<input id="hours" type="number" min="0" max="99" value="0" /></label>
+          <label>분<input id="minutes" type="number" min="0" max="59" value="5" /></label>
+          <label>초<input id="seconds" type="number" min="0" max="59" value="0" /></label>
+        </div>
+        <div class="name-row">
+          <label>타이머 이름<input id="timerName" type="text" maxlength="40" value="집중 타이머" /></label>
+          <label>알람 소리
+            <select id="alarmSound">
+              <option value="beep">비프</option>
+              <option value="chime">차임</option>
+              <option value="digital">디지털</option>
+            </select>
+          </label>
+        </div>
+        <div class="presets" id="presets">
+          <button type="button" data-sec="60">1분</button>
+          <button type="button" data-sec="180">3분</button>
+          <button type="button" data-sec="300" class="active">5분</button>
+          <button type="button" data-sec="600">10분</button>
+          <button type="button" data-sec="900">15분</button>
+          <button type="button" data-sec="1800">30분</button>
+          <button type="button" data-sec="3600">1시간</button>
+        </div>
+        <div class="actions">
+          <button type="button" id="btnStart">시작</button>
+          <button type="button" id="btnPause" disabled>일시정지</button>
+          <button type="button" id="btnReset">리셋</button>
+        </div>
+      </div>
+    </main>
+
+    <aside class="ad side" aria-label="광고 영역">광고<br/>160×600</aside>
+    <div class="ad bottom" aria-label="광고 영역">광고 영역 · AdSense</div>
+    <p class="foot">째깍 · 회원가입 없는 온라인 타이머 · 광고 슬롯은 AdSense 연결용 자리입니다.</p>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const hoursEl = $("hours");
+    const minutesEl = $("minutes");
+    const secondsEl = $("seconds");
+    const nameEl = $("timerName");
+    const soundEl = $("alarmSound");
+    const displayEl = $("display");
+    const labelFace = $("labelFace");
+    const ringProg = $("ringProg");
+    const ringWrap = $("ringWrap");
+    const btnStart = $("btnStart");
+    const btnPause = $("btnPause");
+    const btnReset = $("btnReset");
+
+    let totalMs = 0;
+    let leftMs = 0;
+    let timerId = null;
+    let running = false;
+    let ended = false;
+    const CIRC = 1000;
+
+    function clamp(n, min, max) {
+      return Math.min(max, Math.max(min, n));
+    }
+
+    function readInputsMs() {
+      const h = clamp(Number(hoursEl.value || 0), 0, 99);
+      const m = clamp(Number(minutesEl.value || 0), 0, 59);
+      const s = clamp(Number(secondsEl.value || 0), 0, 59);
+      hoursEl.value = h;
+      minutesEl.value = m;
+      secondsEl.value = s;
+      return ((h * 3600) + (m * 60) + s) * 1000;
+    }
+
+    function fmt(ms) {
+      const t = Math.max(0, Math.ceil(ms / 1000));
+      const h = Math.floor(t / 3600);
+      const m = Math.floor((t % 3600) / 60);
+      const s = t % 60;
+      return [h, m, s].map((x) => String(x).padStart(2, "0")).join(":");
+    }
+
+    function paint() {
+      displayEl.textContent = fmt(leftMs);
+      labelFace.textContent = nameEl.value.trim() || "타이머";
+      const ratio = totalMs > 0 ? leftMs / totalMs : 1;
+      ringProg.style.strokeDashoffset = String(CIRC * (1 - ratio));
+      document.title = running ? `${fmt(leftMs)} · 째깍` : "째깍 — 온라인 타이머";
+    }
+
+    function setFromMs(ms, markPreset) {
+      totalMs = Math.max(0, ms);
+      leftMs = totalMs;
+      ended = false;
+      const t = Math.floor(totalMs / 1000);
+      hoursEl.value = Math.floor(t / 3600);
+      minutesEl.value = Math.floor((t % 3600) / 60);
+      secondsEl.value = t % 60;
+      if (markPreset) {
+        document.querySelectorAll("#presets button").forEach((b) => {
+          b.classList.toggle("active", Number(b.dataset.sec) * 1000 === totalMs);
+        });
+      }
+      paint();
+    }
+
+    function stopTick() {
+      if (timerId) clearInterval(timerId);
+      timerId = null;
+      running = false;
+      ringWrap.classList.remove("running");
+      btnStart.textContent = ended ? "다시 시작" : "시작";
+      btnPause.disabled = true;
+      btnPause.textContent = "일시정지";
+    }
+
+    function playAlarm() {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const kind = soundEl.value;
+      const now = ctx.currentTime;
+      const tones =
+        kind === "chime" ? [523.25, 659.25, 783.99] :
+        kind === "digital" ? [880, 880, 660] :
+        [740, 880, 990];
+      tones.forEach((freq, i) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = kind === "digital" ? "square" : "sine";
+        o.frequency.value = freq;
+        g.gain.setValueAtTime(0.0001, now + i * 0.18);
+        g.gain.exponentialRampToValueAtTime(0.2, now + i * 0.18 + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.18 + 0.28);
+        o.connect(g);
+        g.connect(ctx.destination);
+        o.start(now + i * 0.18);
+        o.stop(now + i * 0.18 + 0.3);
+      });
+      if (navigator.vibrate) navigator.vibrate([120, 60, 120, 60, 200]);
+    }
+
+    function tick() {
+      leftMs = Math.max(0, leftMs - 250);
+      paint();
+      if (leftMs <= 0) {
+        ended = true;
+        stopTick();
+        playAlarm();
+      }
+    }
+
+    function start() {
+      if (running) return;
+      if (leftMs <= 0 || ended) {
+        setFromMs(readInputsMs(), false);
+      }
+      if (leftMs <= 0) return;
+      running = true;
+      ended = false;
+      ringWrap.classList.add("running");
+      btnStart.textContent = "진행 중";
+      btnPause.disabled = false;
+      btnPause.textContent = "일시정지";
+      timerId = setInterval(tick, 250);
+    }
+
+    function pause() {
+      if (!running) return;
+      stopTick();
+      btnStart.textContent = "계속";
+    }
+
+    btnStart.addEventListener("click", start);
+    btnPause.addEventListener("click", pause);
+    btnReset.addEventListener("click", () => {
+      stopTick();
+      setFromMs(readInputsMs(), false);
+    });
+
+    ["hours", "minutes", "seconds"].forEach((id) => {
+      $(id).addEventListener("change", () => {
+        if (running) return;
+        setFromMs(readInputsMs(), true);
+      });
+    });
+    nameEl.addEventListener("input", paint);
+
+    document.querySelectorAll("#presets button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (running) stopTick();
+        setFromMs(Number(btn.dataset.sec) * 1000, true);
+      });
+    });
+
+    setFromMs(5 * 60 * 1000, true);
+  </script>
+</body>
+</html>
