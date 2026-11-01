@@ -1,0 +1,3 @@
+# Standard-library NEIS client; no third-party runtime deps required.
+# Optional local helper used only during exploration:
+# neispy>=5.0.0
